@@ -14,7 +14,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw();
 our @EXPORT_OK = ();
 
-our $VERSION = '0.11';
+our $VERSION = '0.20';
 
 $VERSION = eval $VERSION; 
 
@@ -54,50 +54,23 @@ sub login {
 	return(defined(wantarray)?wantarray?(undef,0,''):undef:undef);
     };
 
-    my $data=$args{SMSC_ID}.                                  # OAdC
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        $args{OTON}.                                          # OTON (short number alias)
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        $args{ONPI}.                                          # ONPI (private)
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        $args{STYP}.                                          # STYP (open session)
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	$self->{OBJ_EMI_COMMON}->ia5_encode($args{SMSC_PW}).  # PWD
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        ''.                                                   # NPWD
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        $args{VERS}.                                          # VERS (version)
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        ''.                                                   # LAdC
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        ''.                                                   # LTON
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        ''.                                                   # LNPI
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        ''.                                                   # OPID
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        '';                                                   # RES1
-
-    my $header=sprintf("%02d",$self->{TRN_OBJ}->next_trn()).  # Transaction counter.
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        $self->{OBJ_EMI_COMMON}->data_len($data).             # Length.
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        'O'.                                                  # Type (operation).
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        '60';                                                 # OT (Session management).
-    
-    my $message_string=$header.
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        $data.
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        $self->{OBJ_EMI_COMMON}->checksum($header.
-                                          $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-                                          $data.
-                                          $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
-
-    my $timeout = $self->{TIMEOUT_OBJ}->timeout();        
-    
-    $self->transmit_msg($message_string,$timeout,1);
+    my $message_string = $self->make_message(
+					     op        => '60',
+					     operation => 1,
+					     oadc      => $args{SMSC_ID},
+					     oton      => $args{OTON},
+					     onpi      => $args{ONPI},
+					     styp      => $args{STYP},
+					     pwd       => $args{SMSC_PW},
+					     vers      => $args{VERS}
+					     );
+					 
+    if ( defined $message_string ) { 
+	my $timeout = $self->{TIMEOUT_OBJ}->timeout();        
+	$self->transmit_msg($message_string, $timeout, 1);
+    } else {
+	return(defined(wantarray)?wantarray?(undef,0,''):undef:undef);
+    }
 }
 
 # This method will also conditionally be called from the login() method.
@@ -174,127 +147,64 @@ sub send_sms {
 
     if ((defined($args{SENDER_TEXT}) and length($args{SENDER_TEXT}))) {
 
-	if ($args{SENDER_TEXT} =~ /^([0-9]+)$/) {
-	    $otoa_tmp = '';
-	    if (length ($args{SENDER_TEXT}) > 22) {substr($args{SENDER_TEXT},22) = ''}
-	    $oadc_tmp = $args{SENDER_TEXT};
-	} elsif ($args{SENDER_TEXT} =~ /^\+([0-9]+)$/) {
-	    $args{SENDER_TEXT} =~ s/^.//;
-	    $otoa_tmp = '1139';
-	    if (length ($args{SENDER_TEXT}) > 22) {substr($args{SENDER_TEXT},22) = ''}
-	    $oadc_tmp = $args{SENDER_TEXT};
-	} else {
-	    $otoa_tmp = '5039';
-	    if (length ($args{SENDER_TEXT}) > 11) {substr($args{SENDER_TEXT},11) = ''}
-	    $oadc_tmp = $self->{OBJ_EMI_COMMON}->encode_7bit($args{SENDER_TEXT});
-	}
+	($oadc_tmp, $otoa_tmp) = $self->_get_info_from($args{SENDER_TEXT});
 
     } else {
-	$args{SENDER_TEXT} = "Nemux"; # ;->
+	$args{SENDER_TEXT} = ''; #empty from
 	$oadc_tmp = $self->{OBJ_EMI_COMMON}->encode_7bit($args{SENDER_TEXT});
     }
 
-    my $data=$args{RECIPIENT}.                          # AdC (Address Code)
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	$oadc_tmp.
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	$self->{SHORT_CODE}.                            # AC. Authentication Code Originator
-                                                        # is empty if authentication method is not
-                                                        # based on it. (see login() sub.)
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # NRq (Notfication Request 1).
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # NAdC.
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # NT (Notification Type 3).
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # NPID.
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # LRq.
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # LRAd (Last Resort Address).
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # LPID.
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # DD.
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # DDT.
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # VP.
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # RPID.
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # SCTS.
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # Dst.
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # Rsn.
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	''.                                             # DSCTS.
-	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	(defined($args{MESSAGE_BINARY}) ?               # MT (message type).
-	 '4' :
-	 '3').
-	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	 (defined($args{MESSAGE_BINARY}) ?
-	  (length($args{MESSAGE_BINARY})/2)*8 :
-	  '').                                          # NB. Number of bits
-	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	 (defined($args{MESSAGE_BINARY}) ?
-	  $args{MESSAGE_BINARY} :
-	  $self->{OBJ_EMI_COMMON}->ia5_encode($args{MESSAGE_TEXT})).
-	  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	  ''.                                           # MMS.
-	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	 ''.                                            # PR.
-	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	 (defined($args{MESSAGE_BINARY}) ?              # DCs. data coding scheme set to 1 if we want to
-	  '1':                                          # to send an 8bit message else empty for 7bit default
-	  '').
-	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	 ((defined($args{FLASH}) and ($args{FLASH} == 1)) 
-	  ?
-	  '0' :                                          # FLASH Message
-	  '').                                           # MCLs.
-	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	 ''.                                             # RPI.
-	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	 ''.                                             # CPg.
-	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	 ''.                                             # RPLy.
-	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	 $otoa_tmp.                                      # OTOA
-	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	 ''.                                             # HPLMN.
-	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	 (defined($args{MESSAGE_BINARY})&&defined($args{MESSAGE_BINARY}) ?                          # $XSer.
-	  make_xser('B',$args{UDH}) :
-	  '').
-	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	 ''.                                             # RES4.
-	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	 '';                                             # RES5;
-
-    my $header=sprintf("%02d",$self->{TRN_OBJ}->next_trn()). # Transaction counter.
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        $self->{OBJ_EMI_COMMON}->data_len($data).
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        'O'.                                             # Type.
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        '51';                                            # OT (submit message)
-
-    my $message_string=$header.
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        $data.
-        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        $self->{OBJ_EMI_COMMON}->checksum($header.
-                                          $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-                                          $data.
-                                          $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+    my %param_tmp = (
+		     op        => '51',
+		     operation => 1,
+		     adc       => $args{RECIPIENT},
+		     oadc      => $oadc_tmp,
+		     ac        => $self->{SHORT_CODE},
+		     mt        => (defined($args{MESSAGE_BINARY}) ? '4' : '3'),
+		     nb        => (defined($args{MESSAGE_BINARY}) ? 
+				   (length($args{MESSAGE_BINARY})/2)*8 : ''),
+		     dcs       => (defined($args{MESSAGE_BINARY}) ? '1' : ''),
+		     mcls      => ((defined($args{FLASH}) and ($args{FLASH} == 1)) ? 
+				   '0' : ''),
+		     otoa      => $otoa_tmp,
+		     xser      => (defined($args{MESSAGE_BINARY})&&defined($args{MESSAGE_BINARY}) ?
+				   make_xser("B", $args{UDH}) : '')
+		     );
     
-    $self->transmit_msg($message_string,$timeout,1);
+    if (defined $args{MESSAGE_BINARY}) {
+	$param_tmp{tmsg} = $args{MESSAGE_BINARY};
+    } else {
+	$param_tmp{amsg} = $args{SENDER_TEXT};
+    }
+
+    my $message_string = $self->make_message(%param_tmp);
+
+    $self->transmit_msg($message_string, $timeout, 1);
 }
 
+
+sub _get_info_from {
+    my ($self, $from) = @_;
+    
+    my ($oadc_tmp, $otoa_tmp);
+
+    if ($from =~ /^([0-9]+)$/) {
+	$otoa_tmp = '';
+	if (length ($from) > 22) {substr($from,22) = ''}
+	$oadc_tmp = $from;
+    } elsif ($from =~ /^\+([0-9]+)$/) {
+	$from =~ s/^.//;
+	$otoa_tmp = '1139';
+	if (length ($from) > 22) {substr($from,22) = ''}
+	$oadc_tmp = $from;
+    } else {
+	$otoa_tmp = '5039';
+	if (length ($from) > 11) {substr($from,11) = ''}
+	$oadc_tmp = $self->{OBJ_EMI_COMMON}->encode_7bit($from);
+    }
+    
+    return ($oadc_tmp,$otoa_tmp);
+}
 
 #########Development....
 #make_xser() subfunction.
@@ -1227,7 +1137,8 @@ sub _parse_5x {
     
     if ($mess{type} eq "O") {
 	$mess{adc} = $ucp[4];
-	$mess{oadc} = $ucp[5];
+	$mess{otoa} = $ucp[32];
+	$mess{oadc} = ($mess{otoa} eq "5039") ? $self->{OBJ_EMI_COMMON}->decode_7bit($ucp[5]) : $ucp[5];
 	$mess{ac} = $ucp[6];
 	$mess{nrq} = $ucp[7];
 	$mess{nadc} = $ucp[8]; 
@@ -1256,7 +1167,6 @@ sub _parse_5x {
 	$mess{rpi} = $ucp[29];
 	$mess{cpg} = $ucp[30];
 	$mess{rply} = $ucp[31];
-	$mess{otoa} = $ucp[32];
 	$mess{hplmn} = $ucp[33];
 	$mess{xser} = $ucp[34];
 	$mess{res4} = $ucp[35];
@@ -1809,6 +1719,7 @@ sub make_61 {
 
 #it doesn't get response!
 #param : host, port, listen
+#param : output, action
 ############################
 sub create_fake_smsc {
     my $self = shift;
@@ -1839,18 +1750,25 @@ sub create_fake_smsc {
 		my $message = <$sock>;
 		if ($message) {
 		    $message =~ s/[\n\r]//g;
-		    print "\n\n[*] UCP string -\n";
-		    print "-"x30;
-		    print "\n" . $message . "\n";
-		    print "-"x30;
-		    print "\n";
-		    my $response = $self->parse_message($message);
-		    if (ref($response) eq "HASH") {
-			foreach my $k (keys %{$response}) {
-			    print "\nP.Name: [$k] - Value:\t$response->{$k}";
-			}
+		    if (exists $opt{output} and $opt{output} == 1) {
+			print "\n\n[*] UCP string -\n";
+			print "-"x30;
+			print "\n" . $message . "\n";
+			print "-"x30;
+			print "\n";
+		    }
+		    if (exists $opt{action} and ref($opt{action}) eq "CODE") {
+			my $resp_be = $opt{action}($message);
+			print $sock $resp_be if $resp_be ne ''; 
 		    } else {
-			print "Error while parsing message\n";
+			my $response = $self->parse_message($message);
+			if (ref($response) eq "HASH") {			    
+			    foreach my $k (keys %{$response}) {
+				print "\nP.Name: [$k] - Value:\t$response->{$k}";
+			    }
+			} else {
+			    print "Error while parsing message\n";
+			}
 		    }
 		} else {
 		    $readable_handles->remove($sock);
@@ -1977,7 +1895,26 @@ sub data_len {
     $len;
 }
 
-# The first 'octet' in the string returned will contain the length of the remaining user data.
+sub decode_7bit {
+    shift;
+    my ($oadc) = shift;
+    my ($msg,$bits);
+    my $cnt=0;
+    my $ud = $oadc || "";
+    my $len = lenght($ud);
+    $msg = "";
+    my $byte = unpack('b8', pack('H2', substr($ud, 0, 2)));
+    while (($cnt<length($ud)) && (length($msg)<$len)) {
+	$msg.= pack('b7', $byte);
+	$byte = substr($byte,7,length($byte)-7);
+	if ( (length( $byte ) < 7) ) {
+	    $cnt+=2;
+	    $byte = $byte.unpack('b8', pack('H2', substr($ud, $cnt, 2)));
+	}
+    }
+    return $msg;
+}
+
 sub encode_7bit {
     my($self,$msg)=@_;
     my($bit_string,$user_data)=('','');
@@ -1989,8 +1926,6 @@ sub encode_7bit {
 	$bit_string.=unpack('b7',$_);
     }
 
-    print("Bitstring:$bit_string\n") if DEBUG;
-	
     while(defined($bit_string)&&(length($bit_string))) {
 	$rest=$octet=substr($bit_string,0,8);
 	$user_data.=unpack("H2",pack("b8",substr($octet.'0'x7,0,8)));
@@ -2471,6 +2406,8 @@ returns nothing (void)
 
 =head1 RAW MODE
 
+=head2 Methods
+
 =item wait_in_loop() 
 
 It needs two parameters (timeout, action) with wait_in_loop() method you are able to get back 
@@ -2533,6 +2470,8 @@ You don't need response in some cases,
  
     ($ack, $error_code, $error_text) = $ucp->transmit_msg($ucp_message, $timeout, $i_need_response);
 
+=head2 Parsing Message in Raw Mode
+
 =item parse_message()
 
 with this method you are able to parse any string get back from SMSC without know what kind 
@@ -2557,6 +2496,8 @@ recalculated from module, you can use this value to check checksum get back from
 
      print "\nDUMP\n";
      print Dumper($ref_msg);
+
+=head2 Making Message in Raw Mode
 
 =item make_message()
 
@@ -2610,7 +2551,7 @@ it returns a scalar value with UCP string or undef on error.
      #ready for being sent through transmit_msg() to your SMSC
 
 
-=item parse_*
+=head2 All Parsing Functions Name
 
 For all operations exist a method parse_[OP_NN] 
        
@@ -2633,7 +2574,7 @@ For all operations exist a method parse_[OP_NN]
 every functions return a reference to a hash (as seen for parse_message())
 or undef on error.
 
-=item make_*     
+=head2 All Making Functions Name
 
 For all operations exist a method make_[OP_NN] 
 
@@ -2675,7 +2616,7 @@ For every function is possible to set as parameters in input the same name of op
     
     }
 
-#SMSC side
+SMSC side
 
     $ucp->make_01(
 		  result => 1,
@@ -2684,7 +2625,7 @@ For every function is possible to set as parameters in input the same name of op
 		  sm     => '01234567890:090196103258'
 		  );
 
-#or... nack
+or... nack
     
     $ucp->make_01(
 	          result => 1,
@@ -2694,7 +2635,7 @@ For every function is possible to set as parameters in input the same name of op
 		  sm     => 'Syntax Error'
 		  );
 
-#another example.. op 02
+another example.. op 02
 
     $ucp_string = $ucp->make_02(
 				operation => 1,
@@ -2710,23 +2651,54 @@ For every function is possible to set as parameters in input the same name of op
 
 =head1 SMSCfAKE 
 
+=head2 Description 
+
 This module version support a first release of SMSCfAKE, with this feature you are able to start a simple smsc 
 that receive messages from any client. It parses and prints UCP messages.
 It doesn't get back response in this version.
 
+=head2 How-to create a simple Fake SMSC
+
+Is possible to create a simple Fake SMSC through method reported below. 
+
 =item create_smsc_fake()
 
-It accepts 3 optional parameters :  host, port, listen
+It accepts 5 optional parameters :  host, port, listen, output, action
 
+    1) host : set smsc address (default are 127.0.0.1)
+    2) port : set smsc port (default are 6666)
+    3) listen : max listen (default 5)
+    4) output : set to 1, if you want to see on standard output string UCP got back from client
+    5) action : your internal subroutine reference. It must to accept a scalar value as input, its content 
+                will be UCP String got back from client. 
+                It could be get back a UCP string response into a scalar value. This value will be printed 
+                get back to the client.
+                Without this parameter smsc fake parse UCP string and will print it on stdout. 
+    
 =item EXAMPLE 
 
    $ucp = Net::UCP->new(FAKE => 1);
    $ucp->create_fake_smsc();
 
+   $ucp = Net::UCP->new(FAKE => 1);
 
-now you have an smsc in listen on port 6666 with host 127.0.0.1
-If you want to change this values set parameters.
+   sub code_ref($) {
+       my $ucp_string = shift;
+    
+       $ucp->parse_message($ucp_string);
 
+       return $ucp_string_respone;
+   }
+   
+   $ucp->create_fake_smsc(
+			  host   => 10.10.10.21,
+			  port   => 1234,
+			  listen => 10,
+			  output => 1,
+			  action => \&code_ref
+			  );
+
+   
 
 =back
 

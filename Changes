@@ -45,3 +45,7 @@ Revision history for Perl extension Net::UCP.
 	- Add an example ucp.pl 
 	- Remake of some part of manual
 
+0.20  Fri Jan 24 11:18:21 CET 2005
+	- Add more flexibility to create_fake_smsc()
+	- Optimized code (login() and submit_sms())
+	- some bug fix.

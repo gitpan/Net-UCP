@@ -54,7 +54,7 @@ if ( defined($ucp_string) ) {
     ($acknowledge, $error_number, $error_text) = $emi->transmit_msg( $ucp_string, 5, 1 );
     print $error_text ."\n";
 } else {
-    die "Error while making UCP String OP 51\n";
+    die "Error while making UCP String OP 60\n";
 }
 
 #SUBMIT MESSAGE
