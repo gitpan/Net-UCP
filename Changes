@@ -36,6 +36,12 @@ Revision history for Perl extension Net::UCP.
 	  3) Create a fake SMSC Server based on EMI/UCP Protocol 
 	     to test your application. 
 	- Add some little test in t/ directory.
+	- remove read_mo() (bad and unsecure method)
 	Thanks to people contacted me.  
 	Please contact me directly for any suggestion because i haven't time to make good test on it
 	- nemux@cpan.org
+
+0.11  Fri Jan 21 16:04:45 CET 2005
+	- Add an example ucp.pl 
+	- Remake of some part of manual
+

@@ -14,7 +14,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw();
 our @EXPORT_OK = ();
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 $VERSION = eval $VERSION; 
 
@@ -108,8 +108,8 @@ sub open_link {
                                         PeerAddr  => $self->{SMSC_HOST},
                                         PeerPort  => $self->{SMSC_PORT},
                                         Proto     => 'tcp',
-                                        LocalAddr => defined($self->{SRC_HOST}) ? $self->{SRC_HOST} : '',
-                                        LocalPort => defined($self->{SRC_PORT}) ? $self->{SRC_PORT} : ''
+                                        LocalAddr => defined($self->{SRC_HOST}) ? $self->{SRC_HOST} : undef,
+                                        LocalPort => defined($self->{SRC_PORT}) ? $self->{SRC_PORT} : undef
 					);
 
     defined($self->{SOCK})||do {
@@ -330,7 +330,7 @@ sub _init {
     my$self=shift();
     $self->{OBJ_EMI_COMMON}=Common->new();
     my%args=(
-	     SMSC_FAKE=>0, 
+	     FAKE=>0, 
 	     SMSC_HOST=>'',
              SMSC_PORT=>$self->{OBJ_EMI_COMMON}->DEF_SMSC_PORT,
              SENDER_TEXT=>'',
@@ -1919,7 +1919,7 @@ sub transmit_msg {
 	    $errtxt=~s/\s+$//;
 	}
     
-	$errtxt .='\nWe send :'.$message_string.' We Recieve'.$response.'\n';
+	$errtxt .= "\nSent : " . $message_string . "\nReceive : " . $response . "\n";
 	defined(wantarray)?wantarray?($ack,$errcode,$errtxt):$ack:undef;
     
     } else {
@@ -2159,7 +2159,7 @@ you can use this module in raw mode. See RAW MODE for more informations.
 			 FAKE        => 0
 			 ) or die("Failed to create SMSC object");
     
-    $emi->open_link() or die("Failed to connect to SMSC");
+    $emi->open_link() or die($!);
 
     ($acknowledge,$error_number,$error_text) = $emi->login(
 							   SMSC_ID    => 'your_account_id',
@@ -2176,9 +2176,6 @@ you can use this module in raw mode. See RAW MODE for more informations.
 							      RECIPIENT      => $recipient, #mand.
 							      MESSAGE_TEXT   => $text,      #opt
 							      SENDER_TEXT    => $sender,    #opt
-							      UDH            => $udh,       #opt
-							      FLASH          => $flash,     #opt 
-							      MESSAGE_BINARY => $b_mess,    #opt
 							      );
     
     die("Sending SMS failed. Error nbr: $error_number, Error txt: $error_text\n") unless($acknowledge);
@@ -2555,7 +2552,6 @@ recalculated from module, you can use this value to check checksum get back from
     
      $ref_msg = $ucp->parse_message($smsc_message);
 
-#it's header part (same for all UCP messages)
      print "This is a " . $ref_msg->{type} . " type\n";
      print "OT -> " . $ref_msg->{ot} . "\n\n"; 
 
@@ -2727,15 +2723,16 @@ It accepts 3 optional parameters :  host, port, listen
    $ucp = Net::UCP->new(FAKE => 1);
    $ucp->create_fake_smsc();
 
-#now you have an smsc in listen on port 6666 with host 127.0.0.1
-#of you want to change this values set parameters.
 
- 
+now you have an smsc in listen on port 6666 with host 127.0.0.1
+If you want to change this values set parameters.
+
+
 =back
 
 =head1 SEE ALSO
 
-C<IO::Socket>, 
+C<IO::Socket>, ucp.pl
 
 =head1 AUTHOR
 
@@ -2745,9 +2742,9 @@ Marco Romano, E<lt>nemux@cpan.orgE<gt>
 
 Copyright (C) 2004-2005 by Marco Romano
 
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself, either Perl version 5.8.4 or,
-at your option, any later version of Perl 5 you may have available.
+  This library is free software; you can redistribute it and/or modify
+  it under the same terms as Perl itself, either Perl version 5.8.4 or,
+  at your option, any later version of Perl 5 you may have available.
 
 Donations like contribution for the development are appreciated. Contact me directly if you are interested.
 

@@ -5,3 +5,4 @@ README
 t/Net-UCP.t
 lib/Net/UCP.pm
 inc/ExtUtils/AutoInstall.pm
+ucp.pl
