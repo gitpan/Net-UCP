@@ -3,11 +3,14 @@ Revision history for Perl extension Net::UCP.
 0.00_01  Tue Sep 28 13:00:17 2004
 	- Net::UCP was born
 
-0.01 Tue Oct 23 11:49:12 2004
+0.01 Sat Oct 23 11:49:12 2004
 	- Make some test on it
 	- bug fix in login method
         - add new features on login method
         - a remake of manual :-)
         - Thanks to Kumar Arjunan to test it in a production enviroment
 
-
+0.02 Tue Oct 26 19:28:45 2004
+	- Add read_mo() method to get back Mobile Originated Messages
+	  It's in test...	
+	- remake of Changes file... ;-) in Version 0.01 23 Oct it wasn't Tuesday but Saturday.

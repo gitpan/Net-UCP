@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use Carp;
 use IO::Socket;
+use Time::HiRes qw(setitimer ITIMER_REAL);
 
 require Exporter;
 
@@ -12,7 +13,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw();
 our @EXPORT_OK = ();
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 $VERSION = eval $VERSION; 
 
@@ -105,7 +106,7 @@ sub login {
 sub open_link {
     my$self=shift;
 
-#	print STDERR "Conneccting.. $self->{SMSC_HOST} - $self->{SMSC_PORT} - $self->{SRC_PORT} - $self->{SRC_HOST}\n";
+#	print STDERR "Connecting.. $self->{SMSC_HOST} - $self->{SMSC_PORT} - $self->{SRC_PORT} - $self->{SRC_HOST}\n";
     $self->{SOCK}=IO::Socket::INET->new(
                                         PeerAddr  => $self->{SMSC_HOST},
                                         PeerPort  => $self->{SMSC_PORT},
@@ -381,33 +382,100 @@ sub _init {
     # Some systems have not implemented alarm().
     # On such systems, calling alarm() will create a run-time error.
     # Determine if we dare calling alarm() or not.
+
+    #I must work on it...
+
     eval{alarm(0)};
     $self->{CAN_ALARM}=$@?0:1;
 
     $self;
 }
 
-#thanks to Kumar Arjunan
-###########################
+
+#TODO: Add parsing of other OPERATION
+#timeout = 0 or < 0 (no timeout)
+#file_path (mandatory)
+######################################
 sub read_mo {
-my($self,$rd)=@_;	
-my($buffer,$response);
+    my ($self, $timeout_second, $file_path) = @_;	
 
-$self->{SOCK}->flush();
-do{
-$rd = $self->{SOCK}->recv($buffer,1);
-	if($buffer eq $self->{OBJ_EMI_COMMON}->STX){
-		$response.=$buffer;
+    unless ($file_path) {
+	croak "Error in read_mo() set file path please!!";
+    }
+    
+    my ($buffer, $response, $rd);
+
+    if ($timeout_second > 0) {
+	$SIG{ALRM} = \&_Sig_Alarm;
+	setitimer(ITIMER_REAL, $timeout_second, 0);
+    }
+
+    $self->{SOCK}->flush();
+    
+    do {
+	
+	$rd = $self->{SOCK}->recv($buffer , 1);
+	
+	if ($buffer eq $self->{OBJ_EMI_COMMON}->STX) {
+	    $response .= $buffer; 
+	} else {
+	    exit 0;	
 	}
-else{
-	exit;	
-}
-}until($buffer eq $self->{OBJ_EMI_COMMON}->ETX);
-	open(FILEWRITE ,">>temp.txt");
-	print FILEWRITE "\n MO BUFFER : $response \n";
-	close FILEWRITE;
+
+    } until($buffer eq $self->{OBJ_EMI_COMMON}->ETX);
+
+#DEBUG...    
+    if (! (open (OUTPUT , ">>$file_path"))) {
+	croak "Unable to open file $file_path\n";
+    }
+    
+    print OUTPUT "\n MO UCP : $response \n";
+
+    my ($trn, $ack, @mes_txt, $adc, $oadc, $mt, $msg);
+    
+    my (@ucp_01) = split($self->{OBJ_EMI_COMMON}->UCP_DELIMITER, $response);
+    
+    $trn = $ucp_01[0];
+    
+    if($ucp_01[4] eq ACK) { 
+	
+	print OUTPUT "TRN=$trn OPER=01 SM=$ucp_01[5] ACK=$ucp_01[4]";
+	
+    } else {
+        
+	$adc  = $ucp_01[4];
+        $oadc = $ucp_01[5];
+        $mt   = $ucp_01[7];
+        
+#To understand read EMI/UCP Specification... operation 01..
+	
+	if ($mt == 2) { 
+            $msg = '';
+	    print OUTPUT "MESS: $ucp_01[8]\n";
+            $msg = $ucp_01[8];
+        }
+        elsif ($mt == 3) {
+            $msg = '';
+            print OUTPUT "MESS: $ucp_01[8]\n";   
+            $msg = $self->{OBJ_EMI_COMMON}->ia5_decode($ucp_01[8]);
+        }
+	
+	print OUTPUT "OPER=01 TYPE=$ucp_01[2] AdC=$adc OAdC=$oadc MT=$mt Msg=$msg\n";
+        
+    }
+    
+    close OUTPUT;
 }
 
+
+sub _Sig_Alarm {
+    #make something after timeout_second...
+    print "\n Timeout Reached\n";
+    exit 0;
+}
+
+
+#############################
 sub _transmit_msg {
     my($self,$message_string,$timeout)=@_;
     my($rd,$buffer,$response,$acknack,$errcode,$errtxt,$ack);
@@ -992,6 +1060,33 @@ a new call to either open_link() or to login() will try to re-establish the comm
 
 returns nothing (void)
 
+=item read_mo() 
+
+it needs two parameters :
+
+first parameter is timeout in second. It could be 0 or < 0 if you don't want to set timeout.
+second parameter is mandatory and it's the path where read_mo() method will store dump of MO messages.
+  
+With read_mo() method you are able to get back MO messages and store it in a text file.
+
+=item EXAMPLE
+
+    $emi->read_mo(
+		  '50',
+		  '/path/dump.txt',
+		  );
+
+
+without timeout
+
+
+    $emi->read_mo(
+                  '0',
+                  '/NEW/path/dump.txt',
+                  );
+
+
+  
 =back
 
 =head1 SEE ALSO
