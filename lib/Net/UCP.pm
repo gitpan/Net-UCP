@@ -9,21 +9,12 @@ require Exporter;
 
 our @ISA = qw(Exporter);
 
-# This allows declaration  use Net::UCP ':all';
-# If you do not need this, moving things directly into @EXPORT or @EXPORT_OK
-# will save memory.
-
-our %EXPORT_TAGS = ( 
-		     'all' => [ qw() ],
-		     'common' => [ qw() ],
-		     );
-
-our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
 our @EXPORT = qw();
+our @EXPORT_OK = ();
 
-our $VERSION = '0.00_01';
+our $VERSION = '0.01';
 
-$VERSION = eval $VERSION;  # see L<perlmodstyle>
+$VERSION = eval $VERSION; 
 
 use constant ACK=>'A';
 use constant TRUE=>1;
@@ -35,11 +26,15 @@ sub new {bless({},shift())->_init(@_);}
 # login to SMSC
 sub login {
     my$self=shift();
-    my%args=(
-             SMSC_ID => '',
-             SMSC_PW => '',
-             SHORT_CODE => undef,
-             @_);
+    my %args=(
+	      SMSC_ID => '',
+	      SMSC_PW => '',
+	      SHORT_CODE => undef,
+	      ONPI => '',
+	      OTON => '',
+	      STYP => 1,       #def 1 (open session)
+	      VERS => '0100', #def 0100
+	      @_);
 
     # Conditionally open the socket unless already opened.
     $self->open_link() unless(defined($self->{SOCK}));
@@ -47,21 +42,6 @@ sub login {
         return(defined(wantarray)?wantarray?(undef,0,''):undef:undef);
     }
 
-#set Authentication code originator (also know as short code)
-#in self if auth is based on AC + src port + dest port and ip addrs.
-
-    if ( defined($args{SHORT_CODE}) ) {
-        if (length($args{SHORT_CODE}) <= 16 && length($args{SHORT_CODE}) >= 4) {
-            $self->{SHORT_CODE} = $args{SHORT_CODE};
-            return TRUE; #we don't need to estab. a session management return TRUE
-        } else {
-            $self->{WARN}&&warn("Wrong Authentication Code Originator 'SHORT_CODE'");
-            return(defined(wantarray)?wantarray?(undef,0,''):undef:undef);
-        }
-    } else {
-	$self->{SHORT_CODE} = '';
-    }
-    
     defined($args{SMSC_ID})&&length($args{SMSC_ID})||do {
 	$self->{WARN}&&warn("Missing mandatory parameter 'SMSC_ID' when trying to login. Login failed");
 	return(defined(wantarray)?wantarray?(undef,0,''):undef:undef);
@@ -72,19 +52,19 @@ sub login {
 	return(defined(wantarray)?wantarray?(undef,0,''):undef:undef);
     };
 
-    my $data=$args{SMSC_ID}.                                       # OAdC
+    my $data=$args{SMSC_ID}.                                  # OAdC
 	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        '6'.                                                  # OTON (short number alias)
+        $args{OTON}.                                          # OTON (short number alias)
 	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        '5'.                                                  # ONPI (private)
+        $args{ONPI}.                                          # ONPI (private)
 	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        '1'.                                                  # STYP (open session)
+        $args{STYP}.                                          # STYP (open session)
 	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
 	$self->{OBJ_EMI_COMMON}->ia5_encode($args{SMSC_PW}).  # PWD
 	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
         ''.                                                   # NPWD
         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        '0100'.                                               # VERS (version)
+        $args{VERS}.                                          # VERS (version)
         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
         ''.                                                   # LAdC
         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
@@ -96,30 +76,36 @@ sub login {
         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
         '';                                                   # RES1
 
-    my $header=sprintf("%02d",$self->{TRN_OBJ}->next_trn()).       # Transaction counter.
+    my $header=sprintf("%02d",$self->{TRN_OBJ}->next_trn()).  # Transaction counter.
         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        $self->{OBJ_EMI_COMMON}->data_len($data).           # Length.
+        $self->{OBJ_EMI_COMMON}->data_len($data).             # Length.
         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        'O'.                                                # Type (operation).
+        'O'.                                                  # Type (operation).
         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        '60';                                               # OT (Session management).
+        '60';                                                 # OT (Session management).
+    
+    my $message_string=$header.
+        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+        $data.
+        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+        $self->{OBJ_EMI_COMMON}->checksum($header.
+                                          $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+                                          $data.
+                                          $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	my $timeout = $self->{TIMEOUT_OBJ}->timeout();        
+	
+	open(FILEWRITE ,">>temp.txt");
+	print FILEWRITE "\n Login : $message_string \n";
+	close FILEWRITE;                               
 
-    my $checksum=$self->{OBJ_EMI_COMMON}->checksum($header.
-                                                   $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-                                                   $data.
-                                                   $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
-    $self->_transmit_msg($header.
-                         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-                         $data.
-                         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-                         $checksum,
-                         $self->{TIMEOUT_OBJ}->timeout());
+    $self->_transmit_msg($message_string,$timeout);
 }
 
 # This method will also conditionally be called from the login() method.
 sub open_link {
     my$self=shift;
 
+#	print STDERR "Conneccting.. $self->{SMSC_HOST} - $self->{SMSC_PORT} - $self->{SRC_PORT} - $self->{SRC_HOST}\n";
     $self->{SOCK}=IO::Socket::INET->new(
                                         PeerAddr  => $self->{SMSC_HOST},
                                         PeerPort  => $self->{SMSC_PORT},
@@ -127,7 +113,10 @@ sub open_link {
                                         LocalAddr => defined($self->{SRC_HOST}) ? $self->{SRC_HOST} : '',
                                         LocalPort => defined($self->{SRC_PORT}) ? $self->{SRC_PORT} : ''
 					);
-    defined($self->{SOCK})||do {
+
+#print STDERR "Socket: $self->{SOCK} $!\n";    
+
+defined($self->{SOCK})||do {
 	$self->{WARN}&&warn("Failed to establish a socket connection with host $self->{SMSC_HOST} on port $self->{SMSC_PORT}");
         return;
     };
@@ -192,11 +181,13 @@ sub send_sms {
          $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
         # OAdC (Originators Adress Code)
         # If given, use it. Otherwise use the one given to the constructor.
-	 (defined($args{SENDER_TEXT})&&length($args{SENDER_TEXT})?
-	  $self->{OBJ_EMI_COMMON}->encode_7bit($args{SENDER_TEXT}):
-	  $self->{OBJ_EMI_COMMON}->encode_7bit($self->{SENDER_TEXT})).
-	  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-	  $self->{SHORT_CODE}.                            # $AC. Authentication Code Originator
+
+	 #(defined($args{SENDER_TEXT})&&length($args{SENDER_TEXT})?
+	 # $self->{OBJ_EMI_COMMON}->encode_7bit($args{SENDER_TEXT}):
+	 # $self->{OBJ_EMI_COMMON}->encode_7bit($self->{SENDER_TEXT})).
+	 # $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+
+	  $self->{SHORT_CODE}.                           # $AC. Authentication Code Originator
                                                          # is empty if authentication method is not
                                                          # based on it. (see login() sub.)
 	  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
@@ -396,18 +387,43 @@ sub _init {
     $self;
 }
 
+#thanks to Kumar Arjunan
+###########################
+sub read_mo {
+my($self,$rd)=@_;	
+my($buffer,$response);
+
+$self->{SOCK}->flush();
+do{
+$rd = $self->{SOCK}->recv($buffer,1);
+	if($buffer eq $self->{OBJ_EMI_COMMON}->STX){
+		$response.=$buffer;
+	}
+else{
+	exit;	
+}
+}until($buffer eq $self->{OBJ_EMI_COMMON}->ETX);
+	open(FILEWRITE ,">>temp.txt");
+	print FILEWRITE "\n MO BUFFER : $response \n";
+	close FILEWRITE;
+}
+
 sub _transmit_msg {
     my($self,$message_string,$timeout)=@_;
     my($rd,$buffer,$response,$acknack,$errcode,$errtxt,$ack);
 
     defined($timeout)||do{$timeout=0};
 
+	open(FILEWRITE ,">>temp.txt");
+	print FILEWRITE "\n NOW : $message_string \n";
+	close FILEWRITE;
+
     print {$self->{SOCK}} ($self->{OBJ_EMI_COMMON}->STX.$message_string.$self->{OBJ_EMI_COMMON}->ETX) ||do{
         $errtxt="Failed to print to SMSC socket. Remote end closed?";
         $self->{WARN}&&warn($errtxt);
         return(defined(wantarray)?wantarray?(undef,0,$errtxt):undef:undef);
     };
-
+    
     $self->{SOCK}->flush();
 
     do  {
@@ -449,6 +465,7 @@ sub _transmit_msg {
         $errtxt=~s/^\s+//;
         $errtxt=~s/\s+$//;
     }
+	$errtxt .='\nWe send :'.$message_string.' We Recieve'.$response.'\n';
     defined(wantarray)?wantarray?($ack,$errcode,$errtxt):$ack:undef;
 }
 
@@ -631,9 +648,15 @@ Net::UCP - Perl extension for EMI - UCP Protocol.
 
 =head1 SYNOPSIS
 
-  use Net::UCP ':all';
+    use Net::UCP;
 
-C<$emi = Net::UCP-E<gt>new(SMSC_HOST=E<gt>'smsc.somedomain.tld', SMSC_PORT=E<gt>3024, SENDER_TEXT=E<gt>'My Self 123', SRC_HOST=E<gt>'my.host.tld', SRC_PORT=E<gt>'1666');>
+    $emi = Net::UCP->new(
+	         	 SMSC_HOST   => 'smsc.somedomain.tld', 
+		         SMSC_PORT   => 3024, 
+		         SENDER_TEXT => 'My Self 123', 
+		         SRC_HOST=   => 'my.host.tld', 
+		         SRC_PORT    => '1666'
+			 );
 
 =head1 DESCRIPTION
 
@@ -655,46 +678,51 @@ Once this has been done, all commands are accessed via method calls on the objec
 
 =head1 EXAMPLE
 
-    C<use Net::UCP ':all';>
+    use Net::UCP;
     
-    C<($recipient,$text,$sender)=@ARGV;>
-    
-    C<my($acknowledge,$error_number,$error_text);>
+    ($recipient,$text,$sender) = @ARGV;
+     
+    my ($acknowledge,$error_number,$error_text);
 
-    C<$emi = Net::UCP-E<gt>new(SMSC_HOST=E<gt>'smsc.somedomain.tld',
-			       SMSC_PORT=E<gt>3024,
-			       SENDER_TEXT=E<gt>'MyApp',
-			       SRC_HOST=E<gt>'10.10.10.21', #optional see below
-			       SRC_PORT=E<gt>'1666',        #optional see below
-			       WARN=E<gt>1) || die("Failed to create SMSC object");>
+    $emi = Net::UCP->new(SMSC_HOST   => 'smsc.somedomain.tld',
+			 SMSC_PORT   => 3024,
+			 SENDER_TEXT => 'MyApp',
+			 SRC_HOST    => '10.10.10.21', #optional see below
+			 SRC_PORT    => '1666',        #optional see below
+			 WARN        => 1
+			 ) or die("Failed to create SMSC object");
     
-    C<$emi-E<gt>open_link() || die("Failed to connect to SMSC")>
+    $emi->open_link() or die("Failed to connect to SMSC");
+
+    ($acknowledge,$error_number,$error_text) = $emi->login(
+							   SMSC_ID    => 'your_account_id',
+							   SMSC_PW    => 'your password',
+							   SHORT_CODE => 'your Auth Code',
+							   OTON       => '5',        #optional
+							   ONPI       => '1',        #optional 
+							   VERS       => '0100',     #optional
+							   );
     
-    C<($acknowledge,$error_number,$error_text) = $emi-E<gt>login(
-								 SMSC_ID=E<gt>'your_account_id',
-								 SMSC_PW=E<gt>'your password',
-								 SHORT_CODE=E<gt>'your Auth Code'
-								 );>
+    die ("Login to SMSC failed. Error nbr: $error_number, Error txt: $error_text\n") unless($acknowledge);
     
-    C<die("Login to SMSC failed. Error nbr: $error_number, Error txt: $error_text\n") unless($acknowledge);>
+    ($acknowledge,$error_number,$error_text) = $emi->send_sms(
+							      RECIPIENT      => $recipient,
+							      MESSAGE_TEXT   => $text,
+							      SENDER_TEXT    => $sender,
+							      UDH            => $udh,
+							      MESSAGE_BINARY => $binary_message
+							      );
     
-    C<($acknowledge,$error_number,$error_text) = $emi-E<gt>send_sms(
-								    RECIPIENT=E<gt>$recipient,
-								    MESSAGE_TEXT=E<gt>$text,
-								    SENDER_TEXT=E<gt>$sender,
-								    UDH=E<gt>$udh,
-								    MESSAGE_BINARY=<gt>$binary_message
-								    );>
+    die("Sending SMS failed. Error nbr: $error_number, Error txt: $error_text\n") unless($acknowledge);
     
-    C<die("Sending SMS failed. Error nbr: $error_number, Error txt: $error_text\n") unless($acknowledge);>
-    
-    C<$emi-E<gt>close_link();>
+    $emi->close_link();
 
 =head1 CONSTRUCTOR
 
 =over 4
 
-=item new( SMSC_HOST=>'smsc.somedomain.tld', SMSC_PORT=>3024, SENDER_TEXT=>'My App', TIMEOUT=>10, WARN=>1, SRC_HOST=>'my.host.tld', SRC_PORT=>'Source Port')
+=item new() 
+
 
 The parameters may be given in arbitrary order.
 
@@ -760,14 +788,14 @@ Any errors detected will be printed on C<STDERR> if the C<WARN=E<gt>> parameter 
 
 C<open_link()> returns B<true> on success and B<undef> in case something went wrong.
 
-=item login(SMSC_ID=>'my_account_id', SMSC_PW=>'MySecretPassword', SHORT_CODE=>'My Auth. Code')
+=item login()
 
 You are able to use authentication based on Operation 60 of EMI Protocol.
 Authenticates against the SMSC with the given SMSC-id and password.
 
 B<or>
 
-Directly trhough Operation 51.
+Directly through Operation 51.
 Authenticates against the SMSC with the given SHORT_CODE (AC parameter).
 
 If the open_link() method has not explicitly been called by the main application,
@@ -775,15 +803,41 @@ the login() method will do it before trying to authenticate with the SMSC.
 
 The parameters may be given in arbitrary order.
 
-C<SHORT_CODE=E<gt>> B<Mandatory>. A valid Authentication Code Mandatory for Auth based on OP 51.
+C<SHORT_CODE=E<gt>> A valid Authentication Code Mandatory for Auth based on OP 51.
 
-You will use login method only to set Authentication Code.
+C<SMSC_ID=E<gt>> A string which should be a valid account ID at the SMSC.
 
-B<or>
+C<SMSC_PW=E<gt>> A valid password at the SMSC.
 
-C<SMSC_ID=E<gt>> B<Mandatory>. A string which should be a valid account ID at the SMSC.
+Optional Parameters (Beta):
 
-C<SMSC_PW=E<gt>> B<Mandatory>. A valid password at the SMSC.
+C<OTON=E<gt>> Originator Type of Number
+
+it could be :
+ 
+              1 = International Number (Starts with the country code) 
+              2 = National Number (Default value is omitted)
+              6 = Abbreviated Number (short number alias)              
+              
+C<ONPI=E<gt>> Originator Numbering Plan Id
+
+it could be :
+
+              1 = E.164 address (default value if omitted)
+              3 = X.121 address
+              5 = Private (TCP/IP address/abbreviated number address)
+
+C<STYP=E<gt>> Subtype of Operation
+     
+              1 = add item to mo-list
+              2 = rmeove item from mo-list
+              3 = verify item mo-list
+              4 = add item to mt-list
+              5 = remove item from mt-list
+              6 = verify item mt-list
+
+
+C<VERS=E<gt>> (...My Test...) default value is 0100
 
 Any errors detected will be printed on C<STDERR> if the C<WARN=E<gt>> parameter in the constructor evaluates to I<true>.
 
@@ -797,7 +851,7 @@ and I<undef> for application related errors.
 Application related errors may be for instance that a mandatory parameter is missing.
 All such errors will be printed on C<STDERR> if the C<WARN=E<gt>> parameter in the constructor evaluates to I<true>.
 
-    In array context, login() will return three values: C<($acknowledge, $error_number, $error_text);>
+In array context, login() will return three values: C<($acknowledge, $error_number, $error_text);>
 where C<$acknowledge> holds the same value as when the method is called in scalar context
 (i.e. I<true>, I<false> or I<undef>),
 C<$error_number> contains a numerical error code from the SMSC and
@@ -812,12 +866,21 @@ contain a zero length string.
 It is B<strongly recommended to call login() in an array context>, since this provides for an improved error handling
 in the main application.
 
-=item send_sms( RECIPIENT=>'391232345678', 
-		MESSAGE_TEXT=>'A Message', 
-		SENDER_TEXT=>'Marco', 
-		UDH=>'050415811581', 
-		MESSAGE_BYNARY=>'024A3A7125CD7DD1A1A5CD7DB1BDD994040045225D04985585D85D84106906985D84984A85585D85D84104D04104D85D0690410A24824C49A6289B09D093126986A800', 
-		TIMEOUT=>5 )
+=item send_sms()
+
+=item EXAMPLE 
+
+    $binary_message  = "024A3A7125CD7DD1A1A5CD7DB1BDD994040045225D04985585D85D84106906985D84984A85585D85D84104D";
+    $binary_message .= "04104D85D0690410A24824C49A6289B09D093126986A800";
+
+    $emi->send_sms(
+		   RECIPIENT      =>'391232345678', 
+		   MESSAGE_TEXT   => 'A Message', 
+		   SENDER_TEXT    => 'Marco', 
+		   UDH            => '050415811581', 
+		   MESSAGE_BYNARY => $binary_message;
+		   TIMEOUT        => 5 
+		   );
 
 Submits the SMS message to the SMSC (Operation 51) and waits for an SMSC acknowledge.
 
@@ -931,15 +994,6 @@ returns nothing (void)
 
 =back
 
-=head2 EXPORT
-
-None by default.
-
-=head1 TODO
-
-    1 - A good Manual ;)
-    2 - Test IT!
-
 =head1 SEE ALSO
 
 C<IO::Socket>, 
@@ -947,8 +1001,6 @@ C<IO::Socket>,
 =head1 AUTHOR
 
 Marco Romano, E<lt>nemux@cpan.orgE<gt>
-
-Based on Gustav Schaffter and Jochen Schneider. Net::EMI::*
 
 =head1 COPYRIGHT AND LICENSE
 
