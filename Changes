@@ -49,3 +49,6 @@ Revision history for Perl extension Net::UCP.
 	- Add more flexibility to create_fake_smsc()
 	- Optimized code (login() and submit_sms())
 	- some bug fix.
+
+0.21  Wed Mar  2 16:23:40 CET 2005
+	- Patched line 177 (Thanks to Geurt on rt.cpan.org)

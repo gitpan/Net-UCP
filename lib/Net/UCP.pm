@@ -14,7 +14,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw();
 our @EXPORT_OK = ();
 
-our $VERSION = '0.20';
+our $VERSION = '0.21';
 
 $VERSION = eval $VERSION; 
 
@@ -174,7 +174,7 @@ sub send_sms {
     if (defined $args{MESSAGE_BINARY}) {
 	$param_tmp{tmsg} = $args{MESSAGE_BINARY};
     } else {
-	$param_tmp{amsg} = $args{SENDER_TEXT};
+	$param_tmp{amsg} = $args{MESSAGE_TEXT};
     }
 
     my $message_string = $self->make_message(%param_tmp);
