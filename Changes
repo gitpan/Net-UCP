@@ -22,5 +22,8 @@ Revision history for Perl extension Net::UCP.
 	  alphanumeric sender text (see man).
 	- Fix make_xser() procedure.
   
-0.04  Mon Dec 13 16:45:22 CET 200
+0.04  Mon Dec 13 16:45:22 CET 2004
 	- Some bug fix
+
+0.05  Fri Dec 17 17:41:51 CET 2004
+	- Fix Makefile.PL, (ExtUtils-AutoInstall) thanks to CPAN Testers.
