@@ -13,7 +13,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw();
 our @EXPORT_OK = ();
 
-our $VERSION = '0.02';
+our $VERSION = '0.04';
 
 $VERSION = eval $VERSION; 
 
@@ -93,20 +93,16 @@ sub login {
                                           $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
                                           $data.
                                           $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
-	my $timeout = $self->{TIMEOUT_OBJ}->timeout();        
-	
-	open(FILEWRITE ,">>temp.txt");
-	print FILEWRITE "\n Login : $message_string \n";
-	close FILEWRITE;                               
 
+    my $timeout = $self->{TIMEOUT_OBJ}->timeout();        
+    
     $self->_transmit_msg($message_string,$timeout);
 }
 
 # This method will also conditionally be called from the login() method.
 sub open_link {
     my$self=shift;
-
-#	print STDERR "Connecting.. $self->{SMSC_HOST} - $self->{SMSC_PORT} - $self->{SRC_PORT} - $self->{SRC_HOST}\n";
+    
     $self->{SOCK}=IO::Socket::INET->new(
                                         PeerAddr  => $self->{SMSC_HOST},
                                         PeerPort  => $self->{SMSC_PORT},
@@ -115,10 +111,8 @@ sub open_link {
                                         LocalPort => defined($self->{SRC_PORT}) ? $self->{SRC_PORT} : ''
 					);
 
-#print STDERR "Socket: $self->{SOCK} $!\n";    
-
-defined($self->{SOCK})||do {
-	$self->{WARN}&&warn("Failed to establish a socket connection with host $self->{SMSC_HOST} on port $self->{SMSC_PORT}");
+    defined($self->{SOCK})||do {
+	$self->{WARN}&&warn("Failed to establish a socket connection with host $self->{SMSC_HOST} on port $self->{SMSC_PORT} : $!");
         return;
     };
     TRUE;
@@ -136,7 +130,7 @@ sub close_link {
     TRUE;
 }
 
-# send the SMS
+# send SMS
 sub send_sms {
     my$self=shift();
     my%args=(
@@ -409,9 +403,11 @@ sub _init {
 }
 
 
+###TEST IT ONLY.... 
 #TODO: Add parsing of other OPERATION
 #timeout = 0 or < 0 (no timeout)
 #file_path (mandatory)
+#file path could be a symlynk....!!!
 ######################################
 sub read_mo {
     my ($self, $timeout_second, $file_path) = @_;	
@@ -441,7 +437,6 @@ sub read_mo {
 
     } until($buffer eq $self->{OBJ_EMI_COMMON}->ETX);
 
-#DEBUG...    
     if (! (open (OUTPUT , ">>$file_path"))) {
 	croak "Unable to open file $file_path\n";
     }
@@ -486,7 +481,6 @@ sub read_mo {
 
 
 sub _Sig_Alarm {
-    #make something after timeout_second...
     print "\n Timeout Reached\n";
     exit 0;
 }
@@ -923,7 +917,7 @@ C<STYP=E<gt>> Subtype of Operation
               6 = verify item mt-list
 
 
-C<VERS=E<gt>> (...My Test...) default value is 0100
+C<VERS=E<gt>> (...Test...) default value is 0100
 
 Any errors detected will be printed on C<STDERR> if the C<WARN=E<gt>> parameter in the constructor evaluates to I<true>.
 

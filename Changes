@@ -1,23 +1,26 @@
 Revision history for Perl extension Net::UCP.
 
-0.00_01  Tue Sep 28 13:00:17 2004
+0.00_01  Tue Sep 28 13:00:17 CET 2004
 	- Net::UCP was born
 
-0.01 Sat Oct 23 11:49:12 2004
+0.01  Sat Oct 23 11:49:12 CET 2004
 	- Make some test on it
 	- bug fix in login method
         - add new features on login method
         - a remake of manual :-)
         - Thanks to Kumar Arjunan to test it in a production enviroment
 
-0.02 Tue Oct 26 19:28:45 2004
+0.02  Tue Oct 26 19:28:45 CET 2004
 	- Add read_mo() method to get back Mobile Originated Messages
 	  It's in test...	
 	- remake of Changes file... ;-) in Version 0.01 23 Oct it wasn't Tuesday but Saturday.
 
-0.03 Tue Nov  9 10:23:58 CET 2004
+0.03  Tue Nov  9 10:23:58 CET 2004
 	- Modify send_sms(). Added FLASH parameter, with this param. is possible to send
 	  class 0 messages.
 	- Add possibility to send messages with international format sender, numeric and
 	  alphanumeric sender text (see man).
-	- Fix make_xser() procedure.  
+	- Fix make_xser() procedure.
+  
+0.04  Mon Dec 13 16:45:22 CET 200
+	- Some bug fix
