@@ -1,4 +1,4 @@
-Net-UCP version 0.04
+Net-UCP version 0.10
 =======================
 
 This module is based on EMI - UCP INTERFACE Specification Version 3.5 of December 1999
@@ -19,14 +19,12 @@ IO::Socket
 
 COPYRIGHT AND LICENCE
 
-Copyright (C) 2004 by Marco Romano
+Copyright (C) 2004-2005 by Marco Romano
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.4 or,
 at your option, any later version of Perl 5 you may have available.
 
-This class is based on Jochen Schneider and Gustav Schaffter work.
-
 THANKS TO
 
-Thanks to Kumar Arjunan to test my module in a little production enviroment.
+People contacted me.

@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use Carp;
 use IO::Socket;
+use IO::Select;
 use Time::HiRes qw(setitimer ITIMER_REAL);
 
 require Exporter;
@@ -13,7 +14,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw();
 our @EXPORT_OK = ();
 
-our $VERSION = '0.05';
+our $VERSION = '0.10';
 
 $VERSION = eval $VERSION; 
 
@@ -96,7 +97,7 @@ sub login {
 
     my $timeout = $self->{TIMEOUT_OBJ}->timeout();        
     
-    $self->_transmit_msg($message_string,$timeout);
+    $self->transmit_msg($message_string,$timeout,1);
 }
 
 # This method will also conditionally be called from the login() method.
@@ -117,6 +118,7 @@ sub open_link {
     };
     TRUE;
 }
+
 
 # To avoid keeping the socket open if not used any more.
 sub close_link {
@@ -289,8 +291,8 @@ sub send_sms {
                                           $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
                                           $data.
                                           $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
-
-    $self->_transmit_msg($message_string,$timeout);
+    
+    $self->transmit_msg($message_string,$timeout,1);
 }
 
 
@@ -311,44 +313,25 @@ sub make_xser($$) {
     my $udh=shift;
     my $xser_ret='';
 
-    if (! defined ($udh)) {
-	return "020115";
-    }
-
+    return "020115" if (! defined ($udh));
 #count octets numbers UDH
     my $udh_len = sprintf("%02X",length($udh)/2);
-
 #counts octets number of DD field
 #octets total number
     my $udh_oct = sprintf("%02X",(length($udh)/2)+1);
 
     $type eq "T" and $xser_ret='020100';
-
-#XSER for binary message with udh
-#XSER multipart
-#TT 02 -> Xser per DCS
-#LL 01 -> ottetti DD
-#DD 00 -> set data coding scheme to 8 bit
-#TT 01 -> Xser for UDH
-#LL $udh_oct -> octets UDH information field
-#DD ->  contains UDH field set by user
-
     $type eq "B" and $xser_ret='01'.$udh_oct.$udh_len.$udh;
-
-####### My Wap Push Test
-#$type eq "B" and $xser_ret='01605040B8423F0';
-#######
 
     return $xser_ret;
 }
-
-# 'Internal' subs. Don't call these since they may, and will, change without notice.
 
 sub _init {
     my$self=shift();
     $self->{OBJ_EMI_COMMON}=Common->new();
     my%args=(
-             SMSC_HOST=>'',
+	     SMSC_FAKE=>0, 
+	     SMSC_HOST=>'',
              SMSC_PORT=>$self->{OBJ_EMI_COMMON}->DEF_SMSC_PORT,
              SENDER_TEXT=>'',
              WARN=>0,
@@ -357,145 +340,1535 @@ sub _init {
              SRC_PORT=>undef,
              @_);
 
-    $self->{WARN}=defined($args{WARN})?$args{WARN}?1:0:0;
-    $self->{TIMEOUT_OBJ}=TimeoutValue->new(TIMEOUT=>$args{TIMEOUT},
-                                           WARN=>$self->{WARN});
     $self->{TRN_OBJ}=TranNbr->new();
 
-    defined($args{SMSC_HOST})&&length($args{SMSC_HOST})||do{
-        $self->{WARN}&&warn("Mandatory entity 'SMSC_HOST' was missing when creating an object of class ".
-                            __PACKAGE__.
-                            ". Object not created");
-        return;       # Failed to instantiate this object.
-    };
-    defined($args{SMSC_PORT})&&length($args{SMSC_PORT})||do{
-        $self->{WARN}&&warn("Mandatory entity 'SMSC_PORT' was missing when creating an object of class ".
-                            __PACKAGE__.
-                            ". Object not created");
-        return;       # Failed to instantiate this object.
-    };
-    $args{SMSC_PORT}=~/^\d+$/||do{
-        $self->{WARN}&&warn("Non-numerical data found in entity 'SMSC_PORT' when creating an object of class ".
-                            __PACKAGE__.
-                            ". Object not created");
-        return;       # Failed to instantiate this object.
-    };
+    if ($args{FAKE} == 0) {
 
-    $self->{SMSC_HOST}=$args{SMSC_HOST};
-    $self->{SMSC_PORT}=$args{SMSC_PORT};
-    $self->{SENDER_TEXT}=defined($args{SENDER_TEXT})&&length($args{SENDER_TEXT})?$args{SENDER_TEXT}:__PACKAGE__;
-
-    $self->{SRC_HOST}=$args{SRC_HOST};
-    $self->{SRC_PORT}=$args{SRC_PORT};
-
-    $self->{SOCK}=undef;
-
-    # Some systems have not implemented alarm().
-    # On such systems, calling alarm() will create a run-time error.
-    # Determine if we dare calling alarm() or not.
-
-    #I must work on it...
-
-    eval{alarm(0)};
-    $self->{CAN_ALARM}=$@?0:1;
+	$self->{WARN}=defined($args{WARN})?$args{WARN}?1:0:0;
+	$self->{TIMEOUT_OBJ}=TimeoutValue->new(TIMEOUT=>$args{TIMEOUT},
+                                           WARN=>$self->{WARN});
+	
+	defined($args{SMSC_HOST})&&length($args{SMSC_HOST})||do{
+	    $self->{WARN}&&warn("Mandatory entity 'SMSC_HOST' was missing when creating an object of class ".
+				__PACKAGE__.
+				". Object not created");
+	    return;       # Failed to instantiate this object.
+	};
+	defined($args{SMSC_PORT})&&length($args{SMSC_PORT})||do{
+	    $self->{WARN}&&warn("Mandatory entity 'SMSC_PORT' was missing when creating an object of class ".
+				__PACKAGE__.
+				". Object not created");
+	    return;       # Failed to instantiate this object.
+	};
+	$args{SMSC_PORT}=~/^\d+$/||do{
+	    $self->{WARN}&&warn("Non-numerical data found in entity 'SMSC_PORT' when creating an object of class ".
+				__PACKAGE__.
+				". Object not created");
+	    return;       # Failed to instantiate this object.
+	};
+	
+	$self->{SMSC_HOST}=$args{SMSC_HOST};
+	$self->{SMSC_PORT}=$args{SMSC_PORT};
+	$self->{SENDER_TEXT}=defined($args{SENDER_TEXT})&&length($args{SENDER_TEXT})?$args{SENDER_TEXT}:__PACKAGE__;
+	
+	$self->{SRC_HOST}=$args{SRC_HOST};
+	$self->{SRC_PORT}=$args{SRC_PORT};
+	
+	$self->{SOCK}=undef;
+	
+	# Some systems have not implemented alarm().
+	# On such systems, calling alarm() will create a run-time error.
+	# Determine if we dare calling alarm() or not.
+	
+	#I must work on it...
+	
+	eval{alarm(0)};
+	$self->{CAN_ALARM}=$@?0:1;
+    }
 
     $self;
 }
 
 
-###TEST IT ONLY.... 
-#TODO: Add parsing of other OPERATION
-#timeout = 0 or < 0 (no timeout)
-#file_path (mandatory)
-#file path could be a symlynk....!!!
-######################################
-sub read_mo {
-    my ($self, $timeout_second, $file_path) = @_;	
 
-    unless ($file_path) {
-	croak "Error in read_mo() set file path please!!";
+##RAW MODE
+
+#timeout, action
+#################
+sub wait_in_loop {
+    my ($self) = shift;
+    my %arg = @_;
+    my ($retval, $bits);
+    
+    my $socket = $self->{SOCK};
+
+    if (exists($arg{timeout}) and $arg{timeout} > 0) {
+	$SIG{ALRM} = (exists($arg{action}) and ref($arg{action}) eq 'CODE') ? $arg{action} : \&_sig_alarm;
+	setitimer(ITIMER_REAL, $arg{timeout}, 0);
     }
     
-    my ($buffer, $response, $rd);
-
-    if ($timeout_second > 0) {
-	$SIG{ALRM} = \&_Sig_Alarm;
-	setitimer(ITIMER_REAL, $timeout_second, 0);
-    }
-
-    $self->{SOCK}->flush();
-    
-    do {
-	
-	$rd = $self->{SOCK}->recv($buffer , 1);
-	
-	if ($buffer eq $self->{OBJ_EMI_COMMON}->STX) {
-	    $response .= $buffer; 
-	} else {
-	    exit 0;	
+    while ($socket) {
+	$bits = '';
+        vec($bits,fileno($socket),1) = 1;
+        $retval = 0;
+        $retval = select($bits,undef,undef,undef);
+        
+	if ($retval) {
+	    my ($buffer,$response);
+	    do {
+                read($socket,$buffer,1);
+                $response.=$buffer;
+            } until ($buffer eq $self->{OBJ_EMI_COMMON}->ETX);   
+	    
+	    return $response;
 	}
-
-    } until($buffer eq $self->{OBJ_EMI_COMMON}->ETX);
-
-    if (! (open (OUTPUT , ">>$file_path"))) {
-	croak "Unable to open file $file_path\n";
     }
-    
-    print OUTPUT "\n MO UCP : $response \n";
+}
 
-    my ($trn, $ack, @mes_txt, $adc, $oadc, $mt, $msg);
+sub _sig_alarm { croak "No response from SMSC\n"; }
+
+#RAW functions
+###########################
+sub make_message {
+    my $self = shift;
+    my %arg = @_;
+ 
+    my $op = $arg{op};
+    my $string = undef;
     
-    my (@ucp_01) = split($self->{OBJ_EMI_COMMON}->UCP_DELIMITER, $response);
+    if ($op eq "01") { $string = $self->make_01(%arg) }
+    elsif ($op eq "02") { $string = $self->make_02(%arg) }
+    elsif ($op eq "03") { $string = $self->make_03(%arg) }
+    elsif ($op eq "30") { $string = $self->make_30(%arg) }
+    elsif ($op eq "31") { $string = $self->make_31(%arg) }
+    elsif ($op eq "51") { $string = $self->make_51(%arg) }
+    elsif ($op eq "52") { $string = $self->make_52(%arg) }
+    elsif ($op eq "53") { $string = $self->make_53(%arg) }
+    elsif ($op eq "54") { $string = $self->make_54(%arg) }
+    elsif ($op eq "55") { $string = $self->make_55(%arg) }
+    elsif ($op eq "56") { $string = $self->make_56(%arg) }
+    elsif ($op eq "57") { $string = $self->make_57(%arg) }
+    elsif ($op eq "58") { $string = $self->make_58(%arg) }
+    elsif ($op eq "60") { $string = $self->make_60(%arg) }
+    elsif ($op eq "61") { $string = $self->make_61(%arg) }
+
+    return $string;
+}
+
+sub parse_message {
+    my ($self, $resp) = @_;
+ 
+    my $ref_mess = undef;
+
+    if ($resp =~ m/^\d{2}\/\d{5}\/.*\/01\/.*/) { $ref_mess = $self->parse_01($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/02\/.*/) { $ref_mess = $self->parse_02($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/03\/.*/) { $ref_mess = $self->parse_03($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/30\/.*/) { $ref_mess = $self->parse_30($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/31\/.*/) { $ref_mess = $self->parse_31($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/51\/.*/) { $ref_mess = $self->parse_51($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/52\/.*/) { $ref_mess = $self->parse_52($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/53\/.*/) { $ref_mess = $self->parse_53($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/54\/.*/) { $ref_mess = $self->parse_54($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/55\/.*/) { $ref_mess = $self->parse_55($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/56\/.*/) { $ref_mess = $self->parse_56($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/57\/.*/) { $ref_mess = $self->parse_57($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/58\/.*/) { $ref_mess = $self->parse_58($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/60\/.*/) { $ref_mess = $self->parse_60($resp) }
+    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/61\/.*/) { $ref_mess = $self->parse_61($resp) }
+
+    return $ref_mess;
+}
+
+# OPERATION TYPE 01
+sub parse_01 {
+    my ($self, $response)=@_;
+    my %mess;
+
+    my $resp_tmp = $response;
+    $resp_tmp =~ s/..$//;
+    $mess{my_checksum} = $self->{OBJ_EMI_COMMON}->checksum($resp_tmp);
+
+    my (@ucp) = split($self->{OBJ_EMI_COMMON}->UCP_DELIMITER,$response);
+   
+    $mess{trn} = $ucp[0];
+    $mess{len} = $ucp[1];
+    $mess{type} = $ucp[2];
+    $mess{ot} = $ucp[3];
     
-    $trn = $ucp_01[0];
-    
-    if($ucp_01[4] eq ACK) { 
-	
-	print OUTPUT "TRN=$trn OPER=01 SM=$ucp_01[5] ACK=$ucp_01[4]";
-	
+    if ($mess{type} eq "O") {
+	$mess{adc} = $ucp[4];
+	$mess{oadc} = $ucp[5];
+	$mess{ac} = $ucp[6];
+	$mess{mt} = $ucp[7];
+	$mess{nmsg} = $mess{mt} == 2 ? $ucp[8] : '';
+	$mess{amsg} = $mess{mt} == 3 ? $self->{OBJ_EMI_COMMON}->ia5_decode($ucp[8]) : '';
+	$mess{checksum} = $ucp[9];
     } else {
-        
-	$adc  = $ucp_01[4];
-        $oadc = $ucp_01[5];
-        $mt   = $ucp_01[7];
-        
-#To understand read EMI/UCP Specification... operation 01..
-	
-	if ($mt == 2) { 
-            $msg = '';
-	    print OUTPUT "MESS: $ucp_01[8]\n";
-            $msg = $ucp_01[8];
-        }
-        elsif ($mt == 3) {
-            $msg = '';
-            print OUTPUT "MESS: $ucp_01[8]\n";   
-            $msg = $self->{OBJ_EMI_COMMON}->ia5_decode($ucp_01[8]);
-        }
-	
-	print OUTPUT "OPER=01 TYPE=$ucp_01[2] AdC=$adc OAdC=$oadc MT=$mt Msg=$msg\n";
-        
+	if ($ucp[4] eq ACK) {
+	    $mess{ack} = $ucp[4];
+	    $mess{sm} = $ucp[5];
+	    $mess{checksum} = $ucp[6];
+	} else {
+	    $mess{nack} = $ucp[4];
+	    $mess{ec} = $ucp[5];
+	    $mess{sm} = $ucp[6];
+	    $mess{checksum} = $ucp[7];
+	}
     }
     
-    close OUTPUT;
+    return \%mess;
+}
+
+sub make_01 {
+    my ($self) = shift;
+    my %arg = @_;
+
+    my $message_string = undef;
+    
+    if (exists $arg{operation} and $arg{operation} == 1) {
+	
+	my $text = (exists $arg{nmsg} && !exists $arg{amsg}) 
+	    ? $arg{nmsg} 
+	: $self->{OBJ_EMI_COMMON}->ia5_encode($arg{amsg}); 
+
+	my $string = 
+	    (exists $arg{adc} ? $arg{adc} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{oadc} ? $arg{oadc} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{ac} ? $arg{ac} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{mt} ? $arg{mt} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $text;
+	
+	my $header = sprintf("%02d",$self->{TRN_OBJ}->next_trn()) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->data_len($string) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    'O'.                                   
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    '01';                                  
+	
+	$message_string = $header.
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $string . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->checksum($header .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+					      $string .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+
+    } elsif (exists($arg{result}) and $arg{result} == 1) {
+
+	if (exists $arg{ack} and $arg{ack} ne '') {
+	
+	    my $string = 
+		$arg{ack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : '');
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'01';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+
+	} elsif (exists $arg{nack} and $arg{nack} ne '') {
+	    
+	    my $string = 
+		$arg{nack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{ec} ? $arg{ec} : '') .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : '');
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'01';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	}
+    }
+    
+    return $message_string;
+}
+
+#OP 02
+sub parse_02 {
+    my ($self, $response)=@_;
+    my %mess;
+
+    my $resp_tmp = $response;
+    $resp_tmp =~ s/..$//;
+    $mess{my_checksum} = $self->{OBJ_EMI_COMMON}->checksum($resp_tmp);
+    
+    my (@ucp) = split($self->{OBJ_EMI_COMMON}->UCP_DELIMITER,$response);
+    #header...
+    $mess{trn} = $ucp[0];
+    $mess{len} = $ucp[1];
+    $mess{type} = $ucp[2];
+    $mess{ot} = $ucp[3];
+    
+    if ($mess{type} eq "O") {
+	$mess{npl} = $ucp[4];
+	$mess{rads} = $ucp[5];
+	$mess{oadc} = $ucp[6];
+	$mess{ac} = $ucp[7];
+	$mess{mt} = $ucp[8];
+	$mess{nmsg} = $mess{mt} == 2 ? $ucp[9] : '';
+	$mess{amsg} = $mess{mt} == 3 ? $self->{OBJ_EMI_COMMON}->ia5_decode($ucp[9]) : '';
+	$mess{checksum} = $ucp[10];
+    } else {
+	if ($ucp[4] eq ACK) {
+	    $mess{ack} = $ucp[4];
+	    $mess{sm} = $ucp[5];
+	    $mess{checksum} = $ucp[6];
+	} else {
+	    $mess{nack} = $ucp[4];
+	    $mess{ec} = $ucp[5];
+	    $mess{sm} = $ucp[6];
+	    $mess{checksum} = $ucp[7];
+	}
+    }
+    
+    return \%mess;
 }
 
 
-sub _Sig_Alarm {
-    print "\n Timeout Reached\n";
-    exit 0;
+sub make_02 {
+    my ($self) = shift;
+    my %arg = @_;
+
+    my $message_string = undef;
+
+    if (exists $arg{operation} and $arg{operation} == 1) {
+
+	my $text = (exists $arg{nmsg} && !exists $arg{amsg}) 
+	    ? $arg{nmsg} 
+	: $self->{OBJ_EMI_COMMON}->ia5_encode($arg{amsg}); 
+
+	my $string = 
+	    (exists $arg{npl} ? $arg{npl} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{rads} ? $arg{rads} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{oadc} ? $arg{oadc} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{ac} ? $arg{ac} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{mt} ? $arg{mt} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $text;
+
+	my $header = sprintf("%02d",$self->{TRN_OBJ}->next_trn()) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->data_len($string) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    'O'.                                   
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    '02';                                  
+	
+	$message_string = $header.
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $string . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->checksum($header .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+					      $string .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	
+    } elsif (exists($arg{result}) and $arg{result} == 1) {
+
+	if (exists $arg{ack} and $arg{ack} ne '') {
+	
+	    my $string = 
+		$arg{ack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : '') ;
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'02';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+
+	} elsif (exists $arg{nack} and $arg{nack} ne '') {
+	    
+	    my $string = 
+		$arg{nack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{ec} ? $arg{ec} : '') . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : '') ;
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'02';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	}
+    }
+    
+    return $message_string;
 }
 
+
+#OP 03
+sub parse_03 {
+    my ($self, $response)=@_;
+    my %mess ;
+
+    my $resp_tmp = $response;
+    $resp_tmp =~ s/..$//;
+    $mess{my_checksum} = $self->{OBJ_EMI_COMMON}->checksum($resp_tmp);
+    
+    my (@ucp) = split($self->{OBJ_EMI_COMMON}->UCP_DELIMITER,$response);
+    #header...
+    $mess{trn} = $ucp[0];
+    $mess{len} = $ucp[1];
+    $mess{type} = $ucp[2];
+    $mess{ot} = $ucp[3];
+    
+    if ($mess{type} eq "O") {
+	$mess{rad} = $ucp[4];
+	$mess{oadc} = $ucp[5];
+	$mess{ac} = $ucp[6];
+	$mess{npl} = $ucp[7]; #must be 0
+	$mess{gas} = $ucp[8]; #empty if npl 0	
+	$mess{rp} = $ucp[9];
+	$mess{pr} = $ucp[10];
+	$mess{lpr} = $ucp[11];
+	$mess{ur} = $ucp[12];
+	$mess{lur} = $ucp[13];
+	$mess{rc} = $ucp[14];
+	$mess{lrc} = $ucp[15];
+	$mess{dd} = $ucp[16];
+	$mess{ddt} = $ucp[17];
+	$mess{mt} = $ucp[18];
+	$mess{nmsg} = $mess{mt} == 2 ? $ucp[19] : '';
+	$mess{amsg} = $mess{mt} == 3 ? $self->{OBJ_EMI_COMMON}->ia5_decode($ucp[19]) : '';
+	$mess{checksum} = $ucp[20];
+    } else {
+	if ($ucp[4] eq ACK) {
+	    $mess{ack} = $ucp[4];
+	    $mess{sm} = $ucp[5];
+	    $mess{checksum} = $ucp[6];
+	} else {
+	    $mess{nack} = $ucp[4];
+	    $mess{ec} = $ucp[5];
+	    $mess{sm} = $ucp[6];
+	    $mess{checksum} = $ucp[7];
+	}
+    }
+    
+    return \%mess;
+}
+
+
+sub make_03 {
+    my ($self) = shift;
+    my %arg = @_;
+
+    my $message_string = undef;
+
+    if (exists $arg{operation} and $arg{operation} == 1) {
+
+	my $text = (exists $arg{nmsg} && !exists $arg{amsg}) 
+	    ? $arg{nmsg} 
+	: $self->{OBJ_EMI_COMMON}->ia5_encode($arg{amsg}); 
+
+	my $string = 
+	    (exists $arg{rad} ? $arg{rad} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{oadc} ? $arg{oadc} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{ac} ? $arg{ac} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{npl} ? $arg{npl} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{gas} ? $arg{gas} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{rp} ? $arg{rp} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{pr} ? $arg{pr} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{lpr} ? $arg{lpr} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{ur} ? $arg{ur} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{lur} ? $arg{lur} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{rc} ? $arg{rc} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{lrc} ? $arg{lrc} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{dd} ? $arg{dd} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{ddt} ? $arg{ddt} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{mt} ? $arg{mt} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $text;
+
+	my $header = sprintf("%02d",$self->{TRN_OBJ}->next_trn()) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->data_len($string) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    'O'.                                   
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    '03';                                  
+	
+	$message_string = $header.
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $string . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->checksum($header .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+					      $string .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+
+    } elsif (exists($arg{result}) and $arg{result} == 1) {
+
+	if (exists $arg{ack} and $arg{ack} ne '') {
+	
+	    my $string = 
+		$arg{ack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : '');
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'03';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+
+	} elsif (exists $arg{nack} and $arg{nack} ne '') {
+	    
+	    my $string = 
+		$arg{nack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{ec} ? $arg{ec} : '') . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : ''); 
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'03';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	}
+    }
+    
+    return $message_string;
+}
+
+
+#OP 30
+sub parse_30 {
+    my ($self, $response)=@_;
+    my %mess;
+
+    my $resp_tmp = $response;
+    $resp_tmp =~ s/..$//;
+    $mess{my_checksum} = $self->{OBJ_EMI_COMMON}->checksum($resp_tmp);
+
+    my (@ucp) = split($self->{OBJ_EMI_COMMON}->UCP_DELIMITER,$response);
+    #header...
+    $mess{trn} = $ucp[0];
+    $mess{len} = $ucp[1];
+    $mess{type} = $ucp[2];
+    $mess{ot} = $ucp[3];
+    
+    if ($mess{type} eq "O") {
+	$mess{adc} = $ucp[4];
+	$mess{oadc} = $ucp[5];
+	$mess{ac} = $ucp[6];
+	$mess{nrq} = $ucp[7];
+	$mess{nad} = $ucp[8];
+	$mess{npid} = $ucp[9];
+	$mess{dd} = $ucp[10];
+	$mess{ddt} = $ucp[11];
+	$mess{vp} = $ucp[12];
+	$mess{amsg} = $self->{OBJ_EMI_COMMON}->ia5_decode($ucp[13]);
+	$mess{checksum} = $ucp[14];
+    } else {
+	if ($ucp[4] eq ACK) {
+	    $mess{ack} = $ucp[4];
+	    $mess{mvp} = $ucp[5];
+	    $mess{sm} = $ucp[6];
+	    $mess{checksum} = $ucp[7];
+	} else {
+	    $mess{nack} = $ucp[4];
+	    $mess{ec} = $ucp[5];
+	    $mess{sm} = $ucp[6];
+	    $mess{checksum} = $ucp[7];
+	}
+    }
+    
+    return \%mess;
+}
+
+
+sub make_30 {
+    my ($self) = shift;
+    my %arg = @_;
+
+    my $message_string = undef;
+
+    if (exists $arg{operation} and $arg{operation} == 1) {
+
+	my $text = $self->{OBJ_EMI_COMMON}->ia5_encode($arg{amsg}); 
+
+	my $string = 
+	    (exists $arg{adc} ? $arg{adc} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{oadc} ? $arg{oadc} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{ac} ? $arg{ac} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{nrq} ? $arg{nrq} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{nad} ? $arg{nad} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{npid} ? $arg{npid} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{dd} ? $arg{dd} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{ddt} ? $arg{ddt} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{vp} ? $arg{vp} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $text;
+
+	my $header = sprintf("%02d",$self->{TRN_OBJ}->next_trn()) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->data_len($string) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    'O'.                                   
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    '30';                                  
+	
+	$message_string = $header.
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $string . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->checksum($header .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+					      $string .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+
+    } elsif (exists($arg{result}) and $arg{result} == 1) {
+
+	if (exists $arg{ack} and $arg{ack} ne '') {
+	
+	    my $string = 
+		$arg{ack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{mvp} ? $arg{mvp} : '') .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : '') ;
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'30';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	    
+	} elsif (exists $arg{nack} and $arg{nack} ne '') {
+	    
+	    my $string = 
+		$arg{nack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{ec} ? $arg{ec} : '') . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : ''); 
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'30';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	}
+    }
+    
+    return $message_string;
+}
+
+
+#OP 31
+sub parse_31 {
+    my ($self, $response)=@_;
+    my %mess;
+
+    my $resp_tmp = $response;
+    $resp_tmp =~ s/..$//;
+    $mess{my_checksum} = $self->{OBJ_EMI_COMMON}->checksum($resp_tmp);
+
+    my (@ucp) = split($self->{OBJ_EMI_COMMON}->UCP_DELIMITER,$response);
+    #header...
+    $mess{trn} = $ucp[0];
+    $mess{len} = $ucp[1];
+    $mess{type} = $ucp[2];
+    $mess{ot} = $ucp[3];
+    
+    if ($mess{type} eq "O") {
+	$mess{adc} = $ucp[4];
+	$mess{pid} = $ucp[5];
+	$mess{checksum} = $ucp[6];
+    } else {
+	if ($ucp[4] eq ACK) {
+	    $mess{ack} = $ucp[4];
+	    $mess{sm} = $ucp[5];
+	    $mess{checksum} = $ucp[6];
+	} else {
+	    $mess{nack} = $ucp[4];
+	    $mess{ec} = $ucp[5];
+	    $mess{sm} = $ucp[6];
+	    $mess{checksum} = $ucp[7];
+	}
+    }
+    
+    return \%mess;
+}
+
+
+sub make_31 {
+    my ($self) = shift;
+    my %arg = @_;
+
+    my $message_string = undef;
+
+    if (exists $arg{operation} and $arg{operation} == 1) {
+
+	my $string = 
+	    (exists $arg{adc} ? $arg{adc} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{pid} ? $arg{pid} : '') ; 
+	    
+	my $header = sprintf("%02d",$self->{TRN_OBJ}->next_trn()) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->data_len($string) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    'O'.                                   
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    '31';                                  
+	
+	$message_string = $header.
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $string . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->checksum($header .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+					      $string .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+
+    } elsif (exists($arg{result}) and $arg{result} == 1) {
+
+	if (exists $arg{ack} and $arg{ack} ne '') {
+	
+	    my $string = 
+		$arg{ack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : '') ;
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'31';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	    
+	} elsif (exists $arg{nack} and $arg{nack} ne '') {
+	    
+	    my $string = 
+		$arg{nack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{ec} ? $arg{ec} : '') . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : ''); 
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'31';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	}
+    }
+    
+    return $message_string;
+}
+
+
+#OP 5x abstract
+sub _parse_5x {
+    my ($self, $response)=@_;
+    my %mess;
+
+    my $resp_tmp = $response; 
+    $resp_tmp =~ s/..$//;
+    $mess{my_checksum} = $self->{OBJ_EMI_COMMON}->checksum($resp_tmp);
+
+    my (@ucp) = split($self->{OBJ_EMI_COMMON}->UCP_DELIMITER,$response);
+    #header...
+    $mess{trn} = $ucp[0];
+    $mess{len} = $ucp[1];
+    $mess{type} = $ucp[2];
+    $mess{ot} = $ucp[3];
+    
+    if ($mess{type} eq "O") {
+	$mess{adc} = $ucp[4];
+	$mess{oadc} = $ucp[5];
+	$mess{ac} = $ucp[6];
+	$mess{nrq} = $ucp[7];
+	$mess{nadc} = $ucp[8]; 
+	$mess{nt} = $ucp[9];
+	$mess{npid} = $ucp[10];
+	$mess{lrq} = $ucp[11];
+	$mess{lrad} = $ucp[12];
+	$mess{lpid} = $ucp[13];
+	$mess{dd} = $ucp[14];
+	$mess{ddt} = $ucp[15];
+	$mess{vp} = $ucp[16];
+	$mess{rpid} = $ucp[17];
+	$mess{scts} = $ucp[18];
+        $mess{dst} = $ucp[19];
+	$mess{rsn} = $ucp[20];
+	$mess{dscts} = $ucp[21];
+	$mess{mt} = $ucp[22];
+	$mess{nb} = $ucp[23];
+        $mess{nmsg} = $ucp[24] if $mess{mt} == 2;
+        $mess{amsg} = $self->{OBJ_EMI_COMMON}->ia5_decode($ucp[24]) if $mess{mt} == 3;
+	$mess{tmsg} = $ucp[24] if $mess{mt} == 4;
+	$mess{mms} = $ucp[25];
+	$mess{pr} = $ucp[26];
+	$mess{dcs} = $ucp[27];
+	$mess{mcls} = $ucp[28];
+	$mess{rpi} = $ucp[29];
+	$mess{cpg} = $ucp[30];
+	$mess{rply} = $ucp[31];
+	$mess{otoa} = $ucp[32];
+	$mess{hplmn} = $ucp[33];
+	$mess{xser} = $ucp[34];
+	$mess{res4} = $ucp[35];
+	$mess{res5} = $ucp[36];
+	$mess{checksum} = $ucp[37];
+    } else {
+	if ($ucp[4] eq ACK) {
+	    $mess{ack} = $ucp[4];
+	    $mess{mvp} = $ucp[5];
+	    $mess{sm} = $ucp[6];
+	    $mess{checksum} = $ucp[7];
+	} else {
+	    $mess{nack} = $ucp[4];
+	    $mess{ec} = $ucp[5];
+	    $mess{sm} = $ucp[6];
+	    $mess{checksum} = $ucp[7];
+	}
+    }
+    
+    return \%mess;
+
+}
+
+sub _make_5x {
+    my ($self) = shift;
+    my $arg = shift;
+    my $op_type = shift;
+    
+    my $message_string = undef;
+
+    if (exists $arg->{operation} and $arg->{operation} == 1) {
+
+	my $text = '';
+	my $from = '';
+
+	if (exists $arg->{amsg}) {
+	    $text = $self->{OBJ_EMI_COMMON}->ia5_encode($arg->{amsg});
+	} else {
+	    $text = exists $arg->{nmsg} && !exists $arg->{tmsg} ? $arg->{nmsg} : $arg->{tmsg};
+	}
+	
+	$from = $arg->{otoa} eq '5039' 
+	    ? $self->{OBJ_EMI_COMMON}->encode_7bit($arg->{oadc}) 
+	    : $arg->{oadc} 
+	if exists $arg->{otoa} ;
+	    
+	my $string = 
+	    (exists $arg->{adc} ? $arg->{adc} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $from . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{ac} ? $arg->{ac} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{nrq} ? $arg->{nrq} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{nadc} ? $arg->{nadc} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{nt} ? $arg->{nt} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{npid} ? $arg->{npid} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{lrq} ? $arg->{lrq} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{lrad} ? $arg->{lrad} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{lpid} ? $arg->{lpid} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{dd} ? $arg->{dd} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{ddt} ? $arg->{ddt} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{vp} ? $arg->{vp} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{rpid} ? $arg->{rpid} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{scts} ? $arg->{scts} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{dst} ? $arg->{dst} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{rsn} ? $arg->{rsn} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{dscts} ? $arg->{dscts} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{mt} ? $arg->{mt} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{nb} ? $arg->{nb} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $text .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{mms} ? $arg->{mms} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{pr} ? $arg->{pr} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{dcs} ? $arg->{dcs} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{mcls} ? $arg->{mcls} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{rpi} ? $arg->{rpi} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{cpg} ? $arg->{cpg} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{rply} ? $arg->{rply} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{otoa} ? $arg->{otoa} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{hplmn} ? $arg->{hplmn} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{xser} ? $arg->{xser} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{res4} ? $arg->{res4} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg->{res5} ? $arg->{res5} : '') 
+	    ;
+	    
+	my $header = sprintf("%02d",$self->{TRN_OBJ}->next_trn()) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->data_len($string) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    'O'.                                   
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    $op_type;                                  
+	
+	$message_string = $header.
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $string . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->checksum($header .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+					      $string .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+
+    } elsif (exists($arg->{result}) and $arg->{result} == 1) {
+	
+	if (exists $arg->{ack} and $arg->{ack} ne '') {
+	    
+	    my $string = 
+		$arg->{ack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg->{mvp} ? $arg->{mvp} : '') .
+	        $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg->{sm} ? $arg->{sm} : '') ;
+
+	    my $header = sprintf("%02d",$arg->{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		$op_type;                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+
+	} elsif (exists $arg->{nack} and $arg->{nack} ne '') {
+	    
+	    my $string = 
+		$arg->{nack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg->{ec} ? $arg->{ec} : '') . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg->{sm} ? $arg->{sm} : '') ; 
+
+	    my $header = sprintf("%02d",$arg->{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		$op_type;                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	}
+    }
+    
+    return $message_string;
+}
+
+#submit
+sub parse_51 {
+    my ($self, $response)=@_;
+    return $self->_parse_5x($response);
+}
+
+#OP 52 delivery short message
+sub parse_52 {
+    my ($self, $response)=@_;
+    return $self->_parse_5x($response);
+}
+
+sub parse_53 {
+    my ($self, $response)=@_;
+    return $self->_parse_5x($response);
+}
+
+sub parse_54 {
+    my ($self, $response)=@_;
+    return $self->_parse_5x($response);
+}
+
+sub parse_55 {
+    my ($self, $response)=@_;
+    return $self->_parse_5x($response);
+}
+
+sub parse_56 {
+    my ($self, $response)=@_;
+    return $self->_parse_5x($response);
+}
+
+sub parse_57 {
+    my ($self, $response)=@_;
+    return $self->_parse_5x($response);
+}
+
+sub parse_58 {
+    my ($self, $response)=@_;
+    return $self->_parse_5x($response);
+}
+
+sub make_51 {
+    my ($self) = shift;
+    my %arg = @_;
+    return $self->_make_5x(\%arg,'51');
+}
+
+sub make_52 {
+    my ($self) = shift;
+    my %arg = @_;
+    return $self->_make_5x(\%arg,'52');
+}
+
+sub make_53 {
+    my ($self) = shift;
+    my %arg = @_;
+    return $self->_make_5x(\%arg,'53');
+}
+
+sub make_54 {
+    my ($self) = shift;
+    my %arg = @_;
+    return $self->_make_5x(\%arg,'54');
+}
+
+sub make_55 {
+    my ($self) = shift;
+    my %arg = @_;
+    return $self->_make_5x(\%arg,'55');
+}
+
+sub make_56 {
+    my ($self) = shift;
+    my %arg = @_;
+    return $self->_make_5x(\%arg,'56');
+}
+
+sub make_57 {
+    my ($self) = shift;
+    my %arg = @_;
+    return $self->_make_5x(\%arg,'57');
+}
+
+sub make_58 {
+    my ($self) = shift;
+    my %arg = @_;
+    return $self->_make_5x(\%arg,'58');
+}
+
+
+#OP 60 abstract
+sub parse_60 {
+    my ($self, $response)=@_;
+    my %mess;
+
+    my $resp_tmp = $response; 
+    $resp_tmp =~ s/..$//;
+    $mess{my_checksum} = $self->{OBJ_EMI_COMMON}->checksum($resp_tmp);
+
+    my (@ucp) = split($self->{OBJ_EMI_COMMON}->UCP_DELIMITER,$response);
+    #header...
+    $mess{trn} = $ucp[0];
+    $mess{len} = $ucp[1];
+    $mess{type} = $ucp[2];
+    $mess{ot} = $ucp[3];
+    
+    if ($mess{type} eq "O") {
+	$mess{oadc} = $ucp[4];
+	$mess{oton} = $ucp[5];
+	$mess{onpi} = $ucp[6];
+	$mess{styp} = $ucp[7];
+	$mess{pwd} = $self->{OBJ_EMI_COMMON}->ia5_decode($ucp[8]); 
+	$mess{npwd} = $self->{OBJ_EMI_COMMON}->ia5_decode($ucp[9]);
+	$mess{vers} = $ucp[10];
+	$mess{ladc} = $ucp[11];
+	$mess{lton} = $ucp[12];
+	$mess{lnpi} = $ucp[13];
+	$mess{opid} = $ucp[14];
+	$mess{res1} = $ucp[15];
+	$mess{checksum} = $ucp[37];
+    } else {
+	if ($ucp[4] eq ACK) {
+	    $mess{ack} = $ucp[4];
+	    $mess{sm} = $ucp[5];
+	    $mess{checksum} = $ucp[6];
+	} else {
+	    $mess{nack} = $ucp[4];
+	    $mess{ec} = $ucp[5];
+	    $mess{sm} = $ucp[6];
+	    $mess{checksum} = $ucp[7];
+	}
+    }
+    
+    return \%mess;
+}
+
+sub parse_61 {
+    my ($self, $response)=@_;
+    return $self->parse_60($response);
+}
+
+
+sub make_60 {
+    my ($self) = shift;
+    my %arg = @_;
+
+    my $message_string = undef;
+
+    if (exists $arg{operation} and $arg{operation} == 1) {
+
+	my $string = 
+	    (exists $arg{oadc} ? $arg{oadc} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{oton} ? $arg{oton} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{onpi} ? $arg{onpi} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{styp} ? $arg{styp} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{pwd} ? $self->{OBJ_EMI_COMMON}->ia5_encode($arg{pwd}) : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{npwd} ? $self->{OBJ_EMI_COMMON}->ia5_encode($arg{npwd}) : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{vers} ? $arg{vers} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{ladc} ? $arg{ladc} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{lton} ? $arg{lton} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{lnpi} ? $arg{lnpi} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{opid} ? $arg{opid} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{res1} ? $arg{res1} : '') ; 
+	
+	my $header = sprintf("%02d",$self->{TRN_OBJ}->next_trn()) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->data_len($string) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    'O'.                                   
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    '60';                                  
+	
+	$message_string = $header.
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $string . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->checksum($header .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+					      $string .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+
+    } elsif (exists($arg{result}) and $arg{result} == 1) {
+
+	if (exists $arg{ack} and $arg{ack} ne '') {
+	
+	    my $string = 
+		$arg{ack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : '') ;
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'60';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	    
+	} elsif (exists $arg{nack} and $arg{nack} ne '') {
+	    
+	    my $string = 
+		$arg{nack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{ec} ? $arg{ec} : '') . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : '') ; 
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'60';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	}
+    }
+    
+    return $message_string;
+}
+
+
+sub make_61 {
+    my ($self) = shift;
+    my %arg = @_;
+
+    my $message_string = undef;
+
+    if (exists $arg{operation} and $arg{operation} == 1) {
+
+	my $string = 
+	    (exists $arg{oadc} ? $arg{oadc} : '') .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{oton} ? $arg{oton} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{onpi} ? $arg{onpi} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{styp} ? $arg{styp} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{pwd} ? $self->{OBJ_EMI_COMMON}->ia5_encode($arg{pwd}) : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{npwd} ? $self->{OBJ_EMI_COMMON}->ia5_encode($arg{npwd}) : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{vers} ? $arg{vers} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{ladc} ? $arg{ladc} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{lton} ? $arg{lton} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{lnpi} ? $arg{lnpi} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{opid} ? $arg{opid} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{res1} ? $arg{res1} : '') . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    (exists $arg{res2} ? $arg{res2} : '') ; 
+	
+	my $header = sprintf("%02d",$self->{TRN_OBJ}->next_trn()) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->data_len($string) .
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    'O'.                                   
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	    '61';                                  
+	
+	$message_string = $header.
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $string . 
+	    $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+	    $self->{OBJ_EMI_COMMON}->checksum($header .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+					      $string .
+					      $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+
+    } elsif (exists($arg{result}) and $arg{result} == 1) {
+
+	if (exists $arg{ack} and $arg{ack} ne '') {
+	
+	    my $string = 
+		$arg{ack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : '') ;
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'61';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	    
+	} elsif (exists $arg{nack} and $arg{nack} ne '') {
+	    
+	    my $string = 
+		$arg{nack} .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{ec} ? $arg{ec} : '') . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		(exists $arg{sm} ? $arg{sm} : '') ; 
+
+	    my $header = sprintf("%02d",$arg{trn}) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->data_len($string) .
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'R'.                                   
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+		'61';                                  
+
+	    $message_string = $header.
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$string . 
+		$self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+		$self->{OBJ_EMI_COMMON}->checksum($header .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER .
+						  $string .
+						  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER);
+	}
+    }
+    
+    return $message_string;
+}
+
+#it doesn't get response!
+#param : host, port, listen
+############################
+sub create_fake_smsc {
+    my $self = shift;
+    my %opt = @_;
+    
+    my $remote_socket = undef;
+    
+    my $main_socket = new IO::Socket::INET (LocalHost => exists $opt{host} && $opt{host} ne '' ? $opt{host} : '127.0.0.1',
+					    LocalPort => exists $opt{port} && $opt{port} ne '' ? $opt{port} : 6666,
+					    Listen => exists $opt{listen} ? $opt{listen} : 5,
+					    Proto => 'tcp',
+					    Reuse => 1,
+					    );
+    croak "Fake SMSC could not be created, [$!]\n" unless ($main_socket);
+    
+    my $readable_handles = new IO::Select();
+    $readable_handles->add($main_socket);
+
+    my ($sock, $new_sock);
+    
+    while (1) {
+	my ($new_readable) = IO::Select->select($readable_handles, undef, undef, undef);
+	foreach $sock (@$new_readable) {
+	    if ($sock == $main_socket) {
+		$new_sock = $sock->accept();
+		$readable_handles->add($new_sock);
+	    } else {
+		my $message = <$sock>;
+		if ($message) {
+		    $message =~ s/[\n\r]//g;
+		    print "\n\n[*] UCP string -\n";
+		    print "-"x30;
+		    print "\n" . $message . "\n";
+		    print "-"x30;
+		    print "\n";
+		    my $response = $self->parse_message($message);
+		    if (ref($response) eq "HASH") {
+			foreach my $k (keys %{$response}) {
+			    print "\nP.Name: [$k] - Value:\t$response->{$k}";
+			}
+		    } else {
+			print "Error while parsing message\n";
+		    }
+		} else {
+		    $readable_handles->remove($sock);
+		    close($sock);
+		}
+	    }
+	}
+    }
+    
+    return;
+}
 
 #############################
-sub _transmit_msg {
-    my($self,$message_string,$timeout)=@_;
+sub transmit_msg {
+    my($self,$message_string,$timeout,$need_resp)=@_;
     my($rd,$buffer,$response,$acknack,$errcode,$errtxt,$ack);
 
     defined($timeout)||do{$timeout=0};
-
-	open(FILEWRITE ,">>temp.txt");
-	print FILEWRITE "\n NOW : $message_string \n";
-	close FILEWRITE;
 
     print {$self->{SOCK}} ($self->{OBJ_EMI_COMMON}->STX.$message_string.$self->{OBJ_EMI_COMMON}->ETX) ||do{
         $errtxt="Failed to print to SMSC socket. Remote end closed?";
@@ -505,47 +1878,54 @@ sub _transmit_msg {
     
     $self->{SOCK}->flush();
 
-    do  {
-        # If this system implements alarm(), we will do a non-blocking read.
-        if($self->{CAN_ALARM}) {
-            eval {
-                $rd=undef;
-                local($SIG{ALRM})=sub{die("alarm\n")}; # NB: \n required
-                alarm($timeout);
-                $rd=read($self->{SOCK},$buffer,1);
-                alarm(0);
-            };
-            # Propagate unexpected errors.
-            $@&&$@ne"alarm\n"&&die($@);
-        }
-        else {
-            # No alarm() implemented. Must do a (potentially) blocking call to read().
-	    $rd=read($self->{SOCK},$buffer,1);
-	}
-        defined($rd)||do{ # undef, read error.
-            $errtxt="Failed to read from SMSC socket. Never received ETX. Remote end closed?";
-            $self->{WARN}&&warn($errtxt);
-            return(defined(wantarray)?wantarray?(undef,0,$errtxt):undef:undef);
-        };
-        $rd||do{ # Zero, end of 'file'.
-            $errtxt="Never received ETX from SMSC. Remote end closed?";
-            $self->{WARN}&&warn($errtxt);
-            return(defined(wantarray)?wantarray?(undef,0,$errtxt):undef:undef);
-        };
-	$response.=$buffer;
-    }   until($buffer eq $self->{OBJ_EMI_COMMON}->ETX);
+    if ($need_resp == 1) {
+	do  {
+	    # If this system implements alarm(), we will do a non-blocking read.
+	    if($self->{CAN_ALARM}) {
+		eval {
+		    $rd=undef;
+		    local($SIG{ALRM})=sub{die("alarm\n")}; # NB: \n required
+		    alarm($timeout);
+		    $rd=read($self->{SOCK},$buffer,1);
+		    alarm(0);
+		};
+		# Propagate unexpected errors.
+		$@&&$@ne"alarm\n"&&die($@);
+	    }
+	    else {
+		# No alarm() implemented. Must do a (potentially) blocking call to read().
+		$rd=read($self->{SOCK},$buffer,1);
+	    }
+	    defined($rd)||do{ # undef, read error.
+		$errtxt="Failed to read from SMSC socket. Never received ETX. Remote end closed?";
+		$self->{WARN}&&warn($errtxt);
+		return(defined(wantarray)?wantarray?(undef,0,$errtxt):undef:undef);
+	    };
+	    $rd||do{ # Zero, end of 'file'.
+		$errtxt="Never received ETX from SMSC. Remote end closed?";
+		$self->{WARN}&&warn($errtxt);
+		return(defined(wantarray)?wantarray?(undef,0,$errtxt):undef:undef);
+	    };
+	    $response.=$buffer;
+	}   until($buffer eq $self->{OBJ_EMI_COMMON}->ETX);
 
-    (undef,undef,undef,undef,$acknack,$errcode,$errtxt,undef)=split($self->{OBJ_EMI_COMMON}->UCP_DELIMITER,$response);
-    if($acknack eq ACK) {
-        ($ack,$errcode,$errtxt)=(TRUE,0,'');
-    }
-    else {
-        $ack=0;
-        $errtxt=~s/^\s+//;
-        $errtxt=~s/\s+$//;
-    }
+	(undef,undef,undef,undef,$acknack,$errcode,$errtxt,undef)=split($self->{OBJ_EMI_COMMON}->UCP_DELIMITER,$response);
+	if($acknack eq ACK) {
+	    ($ack,$errcode,$errtxt)=(TRUE,0,'');
+	}
+	else {
+	    $ack=0;
+	    $errtxt=~s/^\s+//;
+	    $errtxt=~s/\s+$//;
+	}
+    
 	$errtxt .='\nWe send :'.$message_string.' We Recieve'.$response.'\n';
-    defined(wantarray)?wantarray?($ack,$errcode,$errtxt):$ack:undef;
+	defined(wantarray)?wantarray?($ack,$errcode,$errtxt):$ack:undef;
+    
+    } else {
+	defined(wantarray)?wantarray?(undef,undef,undef):undef:undef;
+    }
+
 }
 
 package Common;
@@ -579,6 +1959,7 @@ sub new {
 
 # Calculate packet checksum
 sub checksum {
+    shift;
     my $checksum;
     defined($_[0])||return(0);
     map {$checksum+=ord} (split //,pop @_);
@@ -587,6 +1968,8 @@ sub checksum {
 
 # Calculate data length
 sub data_len {
+    shift;
+    defined($_[0])||return(0);
     my$len=length(pop @_)+17;
     for(1..(5-length($len))) {
 	$len='0'.$len;
@@ -618,11 +2001,11 @@ sub encode_7bit {
 }
 
 sub ia5_decode {
-    my ($msg)=@_;
+    my ($self,$msg)=@_;
     my $tmp = "";
     my $out = "";
     
-    while (length($msg) != "") {
+    while (length($msg)) {
 	($tmp,$msg) = ($msg =~ /(..)(.*)/);
 	if ($accent_table{$tmp}) {
 	    $out .= sprintf("%s", chr(hex($accent_table{$tmp})));
@@ -634,7 +2017,7 @@ sub ia5_decode {
     return ($out);
 }
 
-sub ia5_encode { join('',map {sprintf "%02X", ord} split(//,pop(@_))); }
+sub ia5_encode { shift; join('',map {sprintf "%02X", ord} split(//,pop(@_))); }
 
 sub _init { shift; }
 
@@ -734,7 +2117,8 @@ Net::UCP - Perl extension for EMI - UCP Protocol.
 		         SMSC_PORT   => 3024, 
 		         SENDER_TEXT => 'My Self 123', 
 		         SRC_HOST=   => 'my.host.tld', 
-		         SRC_PORT    => '1666'
+		         SRC_PORT    => '1666',
+			 FAKE => 0,
 			 );
 
 =head1 DESCRIPTION
@@ -742,18 +2126,19 @@ Net::UCP - Perl extension for EMI - UCP Protocol.
 This module implements a B<Client> Interface to the B<EMI - UCP Interface> specification,
 This Protocol can be used to comunicate with an SMSC (Short Message Service Centre)
 
-Usually the Network connection is based on TCP/IP or X.25.
-
-The EMI/UCP specification can be found online. :) 
-
-This Class can be used to send an SMS message to an SMSC. (Text messages and Binary Messages)
+Usually the Network connection is based on TCP/IP or X.25. 
 
 You will of course be required to have a valid login at the SMSC to use their services.
-(Unless there is an SMSC which provides their services for free.
-Please, let me know about any such service provider. :-)
+(Unless there is an SMSC which provides their services for free. Please, let me know about any 
+such service provider.) If you want to help my project send me info about some SMSC account.
 
 A Net::UCP object must be created with the new() constructor.
 Once this has been done, all commands are accessed via method calls on the object.
+
+*****
+If you have a good know how about EMI/UCP or if you have patience to read specification 
+you can use this module in raw mode. See RAW MODE for more informations.
+*****
 
 =head1 EXAMPLE
 
@@ -761,14 +2146,17 @@ Once this has been done, all commands are accessed via method calls on the objec
     
     ($recipient,$text,$sender) = @ARGV;
      
-    my ($acknowledge,$error_number,$error_text);
+    my ($acknowledge, $error_number, $error_text);
+
+#About Fake Parameter see SMSCfAKE Section.
 
     $emi = Net::UCP->new(SMSC_HOST   => 'smsc.somedomain.tld',
 			 SMSC_PORT   => 3024,
 			 SENDER_TEXT => 'MyApp',
 			 SRC_HOST    => '10.10.10.21', #optional see below
 			 SRC_PORT    => '1666',        #optional see below
-			 WARN        => 1
+			 WARN        => 1,
+			 FAKE        => 0
 			 ) or die("Failed to create SMSC object");
     
     $emi->open_link() or die("Failed to connect to SMSC");
@@ -910,7 +2298,7 @@ it could be :
 C<STYP=E<gt>> Subtype of Operation
      
               1 = add item to mo-list
-              2 = rmeove item from mo-list
+              2 = remove item from mo-list
               3 = verify item mo-list
               4 = add item to mt-list
               5 = remove item from mt-list
@@ -1084,33 +2472,265 @@ a new call to either open_link() or to login() will try to re-establish the comm
 
 returns nothing (void)
 
-=item read_mo() 
+=head1 RAW MODE
 
-it needs two parameters :
+=item wait_in_loop() 
 
-first parameter is timeout in second. It could be 0 or < 0 if you don't want to set timeout.
-second parameter is mandatory and it's the path where read_mo() method will store dump of MO messages.
-  
-With read_mo() method you are able to get back MO messages and store it in a text file.
+It needs two parameters (timeout, action) with wait_in_loop() method you are able to get back 
+every messages from SMSC.
+
+First parameter is timeout in second.
+Second parameter is a ref to a subroutine. This subroutine will be call when timeout will be caught up. 
+
+Second patameter is mandatory and it has no sense if timeout is undefined or less or equal 0. 
+If it isn't set up, wait_in_loop will die leaving a message on standard output when timeout will be caught up. 
+
+it will get back a scalar value with a message string or undef value.
 
 =item EXAMPLE
 
-    $emi->read_mo(
-		  '50',
-		  '/path/dump.txt',
+    my $message;
+
+    sub make_something {
+	print "Timeout reached...";
+	exit 0;
+    }
+
+    $message = $emi->wait_in_loop(
+		                  timeout => 30,
+		                  action => \&make_something
+		                 );
+
+    if (defined($message)) {
+        print "I Get Back From SMSC ... " . $message . "\n";
+    } else {
+        print "No Message from SMSC\n";
+    }
+
+without timeout, it waits "in loop" until something get back.
+
+    $message = $emi->wait_in_loop();
+
+
+=item transmit_msg()
+
+with this method you are able to transmit messages to the SMSC directly, it will get back SMSC
+response if you need it.
+
+Parameters are 3 : ucp message, timeout in second, boolean value as flag for response.
+
+Retrun value are 3 (in array context) = ack, error_code, error_text. 
+If you don't need response these 3 values will be undef.
+In a void context, get beck only ack or nack, or undef on transmission problem. 
+
+You don't need response in some cases, 
+
+    1) you are sending a RESPONSE (Operation "R")
+    2) [for example] you are receving messages from SMSC through a child uses wait_in_loop 
+       (it could be an idea)
+    
+=item EXAMPLE 
+
+    $timeout = 10; #ten seconds timeout
+    $i_need_response = 1;
+ 
+    ($ack, $error_code, $error_text) = $ucp->transmit_msg($ucp_message, $timeout, $i_need_response);
+
+=item parse_message()
+
+with this method you are able to parse any string get back from SMSC without know what kind 
+of message SMSC has given to you.
+
+it returns a ref to an hash that contains message parsed with message parameters as keys (LOWERCASE)
+or undef on error. (it's a wrapper of parse_* functions reported below) 
+
+Every hash reference get back from parse_message contains "my_checksum" key, its value is checksum 
+recalculated from module, you can use this value to check checksum get back from ucp client. 
+
+=item EXAMPLE 
+
+     use Data::Dumper;
+
+     my $smsc_message = "06/00043/R/01/A/01234567890:090196103258/4E";
+    
+     $ref_msg = $ucp->parse_message($smsc_message);
+
+#it's header part (same for all UCP messages)
+     print "This is a " . $ref_msg->{type} . " type\n";
+     print "OT -> " . $ref_msg->{ot} . "\n\n"; 
+
+     print "\nDUMP\n";
+     print Dumper($ref_msg);
+
+=item make_message()
+
+with this method you are able to make UCP strings (it's a wrapper of functions below)
+it returns a scalar value with UCP string or undef on error.
+
+=item EXAMPLE
+
+#we are making a ucp 01 operation type "O".
+
+    my $ucp_string = $upc->make_message(
+                                        op => 01,
+                                        operation => 1,
+                                        adc  => '01234567890',
+                                        oadc => '09876543210',
+                                        ac   => '',
+                                        mt   => 3,
+                                        amsg => 'Short Message'
+                                       );
+
+    
+#we are making a ucp 01 operation type "R". (result)
+
+    my $ucp_string = $ucp->make_message(
+                                        op => 01,
+                                        result => 1,
+                                        trn    => '47',
+                                        nack   => 'N',
+                                        ec     => '02',
+                                        sm     => 'Syntax Error
+                                        );
+
+
+#op 51 submit short message 
+
+     $ucp_string = $ucp->make_message(
+                                      op => '51',
+                                      operation => 1,
+                                      adc   => '00393311212',
+                                      oadc  => 'ALPHA@NUM',         #in the spec. it's wrong i suppose :)
+                                      mt   => 3,
+                                      amsg => 'Short Message for NEMUX',
+                                      mcls => 1,
+                                      otoa => 5039,
+                                      );
+
+     #you get back something like that :
+     #02/00130/O/51/00393311212/1041261419043AAB4D/////////////////3//
+     #53686F7274204D65737361676520666F72204E454D5558////1////5039/////C8
+
+     #ready for being sent through transmit_msg() to your SMSC
+
+
+=item parse_*
+
+For all operations exist a method parse_[OP_NN] 
+       
+      Operation 01 -> parse_01();
+      Operation 02 -> parse_02();
+      Operation 03 -> parse_03();
+      Operation 30 -> parse_30();
+      Operation 31 -> parse_31();
+      Operation 51 -> parse_51();
+      Operation 52 -> parse_52();
+      Operation 53 -> parse_53();
+      Operation 54 -> parse_54();
+      Operation 55 -> parse_55();
+      Operation 56 -> parse_56();
+      Operation 57 -> parse_57();
+      Operation 58 -> parse_58();
+      Operation 60 -> parse_60();
+      Operation 61 -> parse_61();      
+     
+every functions return a reference to a hash (as seen for parse_message())
+or undef on error.
+
+=item make_*     
+
+For all operations exist a method make_[OP_NN] 
+
+      Operation 01 -> make_01();
+      Operation 02 -> make_02();
+      Operation 03 -> make_03();
+      Operation 30 -> make_30();
+      Operation 31 -> make_31();
+      Operation 51 -> make_51();
+      Operation 52 -> make_52();
+      Operation 53 -> make_53();
+      Operation 54 -> make_54();
+      Operation 55 -> make_55();
+      Operation 56 -> make_56();
+      Operation 57 -> make_57();
+      Operation 58 -> make_58();
+      Operation 60 -> make_60();
+      Operation 61 -> make_61();
+
+every functions return a scalar value with message string or undef on error. 
+For every function is possible to set as parameters in input the same name of operation's parameters.
+
+=item EXAMPLE 
+
+#make operation
+    
+    $ucp_string = $ucp->make_01(
+				operation => 1,
+				adc  => '01234567890',
+				oadc => '09876543210',
+				ac   => '',
+				mt   => 3,
+				amsg => 'Short Message'
+				);
+
+    if ( defined($ucp_string) ) { 
+	
+	($ack, $error_code, $error_text) = $ucp->transmit_msg( $ucp_string, 5, 1 ); 
+    
+    }
+
+#SMSC side
+
+    $ucp->make_01(
+		  result => 1,
+		  trn    => '07',
+		  ack    => 'A',
+		  sm     => '01234567890:090196103258'
 		  );
 
+#or... nack
+    
+    $ucp->make_01(
+	          result => 1,
+		  trn    => '47',
+		  nack   => 'N',
+		  ec     => '02',     
+		  sm     => 'Syntax Error'
+		  );
 
-without timeout
+#another example.. op 02
+
+    $ucp_string = $ucp->make_02(
+				operation => 1,
+				npl   => '3',
+				rads  => '003932412341/00393291111/00393451231',
+				oadc => '123',
+				ac   => '',
+				mt   => 3,
+				amsg => 'Short Message to 3 subscribers'
+				);
 
 
-    $emi->read_mo(
-                  '0',
-                  '/NEW/path/dump.txt',
-                  );
 
+=head1 SMSCfAKE 
 
-  
+This module version support a first release of SMSCfAKE, with this feature you are able to start a simple smsc 
+that receive messages from any client. It parses and prints UCP messages.
+It doesn't get back response in this version.
+
+=item create_smsc_fake()
+
+It accepts 3 optional parameters :  host, port, listen
+
+=item EXAMPLE 
+
+   $ucp = Net::UCP->new(FAKE => 1);
+   $ucp->create_fake_smsc();
+
+#now you have an smsc in listen on port 6666 with host 127.0.0.1
+#of you want to change this values set parameters.
+
+ 
 =back
 
 =head1 SEE ALSO
@@ -1123,11 +2743,13 @@ Marco Romano, E<lt>nemux@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2004 by Marco Romano
+Copyright (C) 2004-2005 by Marco Romano
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.4 or,
 at your option, any later version of Perl 5 you may have available.
+
+Donations like contribution for the development are appreciated. Contact me directly if you are interested.
 
 =cut
 

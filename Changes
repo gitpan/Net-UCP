@@ -27,3 +27,15 @@ Revision history for Perl extension Net::UCP.
 
 0.05  Fri Dec 17 17:41:51 CET 2004
 	- Fix Makefile.PL, (ExtUtils-AutoInstall) thanks to CPAN Testers.
+
+0.10  Thu Jan 20 15:30:36 CET 2005
+	- Restyling of UCP Module!!!
+	- Add RAW MODE. Using UCP module in raw mode is possible : 
+	  1) make and parse emi/ucp messages. (ALL operation 01..61) 
+	  2) transmit and receive messages from SMSC.
+	  3) Create a fake SMSC Server based on EMI/UCP Protocol 
+	     to test your application. 
+	- Add some little test in t/ directory.
+	Thanks to people contacted me.  
+	Please contact me directly for any suggestion because i haven't time to make good test on it
+	- nemux@cpan.org

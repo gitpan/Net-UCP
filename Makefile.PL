@@ -2,6 +2,7 @@ use lib 'inc';
 use ExtUtils::AutoInstall(
 			  -core  => [ 'Carp'         => '0',
 				      'IO::Socket'   => '0', 
+				      'IO::Select'   => '0', 
 				      'Time::HiRes'  => '0' ]
 			  );
 WriteMakefile(
