@@ -34,7 +34,7 @@ sub login {
 	      ONPI => '',
 	      OTON => '',
 	      STYP => 1,       #def 1 (open session)
-	      VERS => '0100', #def 0100
+	      VERS => '0100',  #def 0100
 	      @_);
 
     # Conditionally open the socket unless already opened.
@@ -140,12 +140,13 @@ sub close_link {
 sub send_sms {
     my$self=shift();
     my%args=(
-             RECIPIENT=>'',
-             MESSAGE_TEXT=>'',
-             SENDER_TEXT=>'',
-             UDH=>undef,
-             MESSAGE_BINARY=>undef,
-             TIMEOUT=>undef,
+             RECIPIENT => '',
+             MESSAGE_TEXT => '',
+             SENDER_TEXT => '',
+             UDH => undef,
+             MESSAGE_BINARY => undef,
+	     FLASH => undef,
+             TIMEOUT => undef,
              @_);
 
     my$timeout;
@@ -170,109 +171,121 @@ sub send_sms {
     };
 
     # It's OK to send an empty message, but not to use undef.
-    defined($args{MESSAGE_TEXT})||($args{MESSAGE_TEXT}='');
+    defined($args{MESSAGE_TEXT})||($args{MESSAGE_TEXT}=' ');
 
-    my $data=$args{RECIPIENT}.                               # AdC (Address Code)
+    my $oadc_tmp = '';
+    my $otoa_tmp = '';
+
+    if ((defined($args{SENDER_TEXT}) and length($args{SENDER_TEXT}))) {
+
+	if ($args{SENDER_TEXT} =~ /^([0-9]+)$/) {
+	    $otoa_tmp = '';
+	    if (length ($args{SENDER_TEXT}) > 22) {substr($args{SENDER_TEXT},22) = ''}
+	    $oadc_tmp = $args{SENDER_TEXT};
+	} elsif ($args{SENDER_TEXT} =~ /^\+([0-9]+)$/) {
+	    $args{SENDER_TEXT} =~ s/^.//;
+	    $otoa_tmp = '1139';
+	    if (length ($args{SENDER_TEXT}) > 22) {substr($args{SENDER_TEXT},22) = ''}
+	    $oadc_tmp = $args{SENDER_TEXT};
+	} else {
+	    $otoa_tmp = '5039';
+	    if (length ($args{SENDER_TEXT}) > 11) {substr($args{SENDER_TEXT},11) = ''}
+	    $oadc_tmp = $self->{OBJ_EMI_COMMON}->encode_7bit($args{SENDER_TEXT});
+	}
+
+    } else {
+	$args{SENDER_TEXT} = "Nemux"; # ;->
+	$oadc_tmp = $self->{OBJ_EMI_COMMON}->encode_7bit($args{SENDER_TEXT});
+    }
+
+    my $data=$args{RECIPIENT}.                          # AdC (Address Code)
         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        # OAdC (Originators Adress Code)
-        # If given, use it. Otherwise use the one given to the constructor.
-        (defined($args{SENDER_TEXT})&&length($args{SENDER_TEXT})?
-         $self->{OBJ_EMI_COMMON}->encode_7bit($args{SENDER_TEXT}):
-         $self->{OBJ_EMI_COMMON}->encode_7bit($self->{SENDER_TEXT})).
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        # OAdC (Originators Adress Code)
-        # If given, use it. Otherwise use the one given to the constructor.
-
-	 #(defined($args{SENDER_TEXT})&&length($args{SENDER_TEXT})?
-	 # $self->{OBJ_EMI_COMMON}->encode_7bit($args{SENDER_TEXT}):
-	 # $self->{OBJ_EMI_COMMON}->encode_7bit($self->{SENDER_TEXT})).
-	 # $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-
-	  $self->{SHORT_CODE}.                           # $AC. Authentication Code Originator
-                                                         # is empty if authentication method is not
-                                                         # based on it. (see login() sub.)
-	  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # NRq (Notfication Request 1).
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $NAdC.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # NT (Notification Type 3).
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $NPID.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $LRq.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # LRAd (Last Resort Address).
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $LPID.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $DD.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $DDT.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $VP.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $RPID.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $SCTS.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $Dst.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $Rsn.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $DSCTS.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         (defined($args{MESSAGE_BINARY}) ?                # MT (message type).
-         '4' :
-         '3').
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         (defined($args{MESSAGE_BINARY}) ?
+	$oadc_tmp.
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	$self->{SHORT_CODE}.                            # AC. Authentication Code Originator
+                                                        # is empty if authentication method is not
+                                                        # based on it. (see login() sub.)
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # NRq (Notfication Request 1).
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # NAdC.
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # NT (Notification Type 3).
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # NPID.
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # LRq.
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # LRAd (Last Resort Address).
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # LPID.
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # DD.
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # DDT.
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # VP.
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # RPID.
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # SCTS.
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # Dst.
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # Rsn.
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	''.                                             # DSCTS.
+	$self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	(defined($args{MESSAGE_BINARY}) ?               # MT (message type).
+	 '4' :
+	 '3').
+	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	 (defined($args{MESSAGE_BINARY}) ?
 	  (length($args{MESSAGE_BINARY})/2)*8 :
-         '').                                             # $NB. Number of bits
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         (defined($args{MESSAGE_BINARY}) ?
+	  '').                                          # NB. Number of bits
+	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	 (defined($args{MESSAGE_BINARY}) ?
 	  $args{MESSAGE_BINARY} :
 	  $self->{OBJ_EMI_COMMON}->ia5_encode($args{MESSAGE_TEXT})).
 	  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $MMS.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $PR.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         (defined($args{MESSAGE_BINARY}) ?               # $DCs. data coding scheme set to 1 if we want to
-          '1':                                           # to send an 8bit message.
-          '').
-	  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $MCLs.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $RPI.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $CPg.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $RPLy.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         '5039'.
-                                                         # OTOA (Originator Type of Address).
-         # 5039 limit source addr. to 11
-         # empty for a numeric source address
-         # and 1139... we can see UCP sepc :-)
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $HPLMN.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         (defined($args{MESSAGE_BINARY})&&defined($args{MESSAGE_BINARY}) ?                          # $XSer.
-          make_xser('B',$args{UDH}) :
-          '').
-	  $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         ''.                                             # $RES4.
-         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-         '';                                             # $RES5;
+	  ''.                                           # MMS.
+	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	 ''.                                            # PR.
+	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	 (defined($args{MESSAGE_BINARY}) ?              # DCs. data coding scheme set to 1 if we want to
+	  '1':                                          # to send an 8bit message else empty for 7bit default
+	  '').
+	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	 ((defined($args{FLASH}) and ($args{FLASH} == 1)) 
+	  ?
+	  '0' :                                          # FLASH Message
+	  '').                                           # MCLs.
+	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	 ''.                                             # RPI.
+	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	 ''.                                             # CPg.
+	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	 ''.                                             # RPLy.
+	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	 $otoa_tmp.                                      # OTOA
+	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	 ''.                                             # HPLMN.
+	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	 (defined($args{MESSAGE_BINARY})&&defined($args{MESSAGE_BINARY}) ?                          # $XSer.
+	  make_xser('B',$args{UDH}) :
+	  '').
+	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	 ''.                                             # RES4.
+	 $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
+	 '';                                             # RES5;
 
     my $header=sprintf("%02d",$self->{TRN_OBJ}->next_trn()). # Transaction counter.
         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
         $self->{OBJ_EMI_COMMON}->data_len($data).
         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        'O'.                                          # Type.
+        'O'.                                             # Type.
         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
-        '51';                                         # OT (submit message)
+        '51';                                            # OT (submit message)
 
     my $message_string=$header.
         $self->{OBJ_EMI_COMMON}->UCP_DELIMITER.
@@ -297,11 +310,16 @@ sub send_sms {
 #i make this func. to make some test. But it could be good to implement
 #other features
 ####################################################################
-
+#if udh is undef udh will be to set to 020115 (8bit message)
+####################################################################
 sub make_xser($$) {
     my $type=shift;
     my $udh=shift;
     my $xser_ret='';
+
+    if (! defined ($udh)) {
+	return "020115";
+    }
 
 #count octets numbers UDH
     my $udh_len = sprintf("%02X",length($udh)/2);
@@ -331,7 +349,6 @@ sub make_xser($$) {
 }
 
 # 'Internal' subs. Don't call these since they may, and will, change without notice.
-
 
 sub _init {
     my$self=shift();
@@ -774,11 +791,12 @@ Once this has been done, all commands are accessed via method calls on the objec
     die ("Login to SMSC failed. Error nbr: $error_number, Error txt: $error_text\n") unless($acknowledge);
     
     ($acknowledge,$error_number,$error_text) = $emi->send_sms(
-							      RECIPIENT      => $recipient,
-							      MESSAGE_TEXT   => $text,
-							      SENDER_TEXT    => $sender,
-							      UDH            => $udh,
-							      MESSAGE_BINARY => $binary_message
+							      RECIPIENT      => $recipient, #mand.
+							      MESSAGE_TEXT   => $text,      #opt
+							      SENDER_TEXT    => $sender,    #opt
+							      UDH            => $udh,       #opt
+							      FLASH          => $flash,     #opt 
+							      MESSAGE_BINARY => $b_mess,    #opt
 							      );
     
     die("Sending SMS failed. Error nbr: $error_number, Error txt: $error_text\n") unless($acknowledge);
@@ -945,8 +963,9 @@ in the main application.
 		   RECIPIENT      =>'391232345678', 
 		   MESSAGE_TEXT   => 'A Message', 
 		   SENDER_TEXT    => 'Marco', 
-		   UDH            => '050415811581', 
-		   MESSAGE_BYNARY => $binary_message;
+		   FLASH          => 1,
+		   UDH            => '050415811581',
+		   MESSAGE_BYNARY => $binary_message,
 		   TIMEOUT        => 5 
 		   );
 
@@ -961,7 +980,14 @@ This is the phone number of the recipient in international format with leading a
 C<MESSAGE_TEXT=E<gt>> Optional. A text message to be transmitted.
 
 It is accepted to transfer an empty message,
-so if this parameter is missing, a zero length string will be sent.
+so if this parameter is missing, a space character will be sent (0x20).
+
+C<FLASH=E<gt>> Optional. With this parameter you are able to send a Class 0 messages.
+
+    
+              1) Set to 1 Flash Message enabled     (Class 0)
+              2) Other value Flash Message disabled (No Class)
+
 
 C<MESSAGE_BINARY=E<gt>> Optional. A binary message to be transmitted.
 
@@ -970,6 +996,13 @@ C<UDH=E<gt>> Optional. User Data Header (you need to set UDH to use MESSAGE_BINA
 First UDH Octet (length) will be internally calculated for this reason you need to omitted it.
 
 C<SENDER_TEXT=E<gt>> Optional. The text that will appear in the receivers mobile phone, identifying you as a sender.
+
+    In this version you are able to set:
+
+              1) alphanumeric sender  ( Marco81        )
+              2) numeric sender       ( 67166155111    )
+              3) international format ( +3934112331112 ) 
+
 
 This text will B<temporarily> replace the text given to the constructor.
 If omitted, the text already given to the constructor will be used.
@@ -1020,10 +1053,10 @@ guarantee immediate delivery to the recipient or in fact any delivery at all.
 B<About the timeout.>
 Not all Perl systems are able to provide the timeout.
 The timeout is internally implemented with the alarm() call.
-If your system has implemented alarm(),
-then any timeout value provided will be honored.
+If your system has implemented alarm(), then any timeout value provided will be honored.
 If not, you may provide any value you wish for the timeout,
 it will still be ignored and reading the ACK from the SMSC will block until everything is read.
+
 If the SMSC fails to send you the full response B<your application will freeze>.
 If your system B<does> implement alarm() but you do B<not> provide any timeout value,
 then the default timeout of 15 seconds will be applied.
@@ -1036,9 +1069,6 @@ If the response is that alarm() is not implemented, then you're out of luck.
 You can still use the module, but in case the SMSC doesn't respond as expected
 your application will wait B<indefinitively>.
 
-Still, the author uses this module in a production environment without alarm(),
-and thereby without any timeout whatsoever,
-and has still not had any timeout related problem.
 
 =item logout()
 

@@ -14,3 +14,10 @@ Revision history for Perl extension Net::UCP.
 	- Add read_mo() method to get back Mobile Originated Messages
 	  It's in test...	
 	- remake of Changes file... ;-) in Version 0.01 23 Oct it wasn't Tuesday but Saturday.
+
+0.03 Tue Nov  9 10:23:58 CET 2004
+	- Modify send_sms(). Added FLASH parameter, with this param. is possible to send
+	  class 0 messages.
+	- Add possibility to send messages with international format sender, numeric and
+	  alphanumeric sender text (see man).
+	- Fix make_xser() procedure.  
