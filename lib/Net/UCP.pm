@@ -14,7 +14,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw();
 our @EXPORT_OK = ();
 
-our $VERSION = '0.21';
+our $VERSION = '0.22';
 
 $VERSION = eval $VERSION; 
 
@@ -1901,7 +1901,7 @@ sub decode_7bit {
     my ($msg,$bits);
     my $cnt=0;
     my $ud = $oadc || "";
-    my $len = lenght($ud);
+    my $len = length($ud);
     $msg = "";
     my $byte = unpack('b8', pack('H2', substr($ud, 0, 2)));
     while (($cnt<length($ud)) && (length($msg)<$len)) {
@@ -2082,8 +2082,6 @@ you can use this module in raw mode. See RAW MODE for more informations.
     ($recipient,$text,$sender) = @ARGV;
      
     my ($acknowledge, $error_number, $error_text);
-
-#About Fake Parameter see SMSCfAKE Section.
 
     $emi = Net::UCP->new(SMSC_HOST   => 'smsc.somedomain.tld',
 			 SMSC_PORT   => 3024,
