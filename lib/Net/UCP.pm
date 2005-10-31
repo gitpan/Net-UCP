@@ -14,7 +14,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw();
 our @EXPORT_OK = ();
 
-our $VERSION = '0.22';
+our $VERSION = '0.23';
 
 $VERSION = eval $VERSION; 
 
@@ -304,6 +304,7 @@ sub _init {
 ##RAW MODE
 
 #timeout, action
+#clear = 0,1
 #################
 sub wait_in_loop {
     my ($self) = shift;
@@ -330,9 +331,18 @@ sub wait_in_loop {
                 $response.=$buffer;
             } until ($buffer eq $self->{OBJ_EMI_COMMON}->ETX);   
 	    
+	    if (exists $arg{clear}) {
+		$self->clear_ucp_message(\$response) if ($arg{clear});
+	    }
+	    
 	    return $response;
 	}
     }
+}
+
+sub clear_ucp_message {
+    my ($self, $msg) = @_;   
+    $$msg =~ s/$self->{OBJ_EMI_COMMON}->ETX|$self->{OBJ_EMI_COMMON}->STX//g;
 }
 
 sub _sig_alarm { croak "No response from SMSC\n"; }
@@ -2406,9 +2416,20 @@ returns nothing (void)
 
 =head2 Methods
 
+=item clear_ucp_message()
+
+this method remove STX and ETX characters from string received in input and return nothing. 
+
+=item EXAMPLE 
+    
+    $emi_obj->clear_ucp_message(\$ucp_message);
+
 =item wait_in_loop() 
 
-It needs two parameters (timeout, action) with wait_in_loop() method you are able to get back 
+It needs three parameters (timeout, action, clear) clear is a boolean value, when clear is equal "1",
+method removes characters STX and ETX from all messages received.
+
+With wait_in_loop() method you are able to get back 
 every messages from SMSC.
 
 First parameter is timeout in second.
@@ -2443,6 +2464,9 @@ without timeout, it waits "in loop" until something get back.
 
     $message = $emi->wait_in_loop();
 
+with clear equal 1 it removes STX and ETX characters.
+
+    $message = $emi->wait_in_loop(clear => 1);
 
 =item transmit_msg()
 

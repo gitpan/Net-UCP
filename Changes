@@ -56,3 +56,6 @@ Revision history for Perl extension Net::UCP.
 0.22  Wed Aug  3 16:16:48 CEST 2005
 	- Patched line 1904 (Thanks to mmspete on rt.cpan.org)
 
+0.23  Mon Oct 31 10:26:16 CET 2005
+	- Add clear_ucp_message() method (remove ETX and STX characters)
+	- add "clear" parameter in wait_in_loop mathod.
