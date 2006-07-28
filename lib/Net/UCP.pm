@@ -14,7 +14,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw();
 our @EXPORT_OK = ();
 
-our $VERSION = '0.24';
+our $VERSION = '0.25';
 
 $VERSION = eval $VERSION; 
 
@@ -2738,13 +2738,11 @@ Marco Romano, E<lt>nemux@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2004-2005 by Marco Romano
+Copyright (C) 2004-2006 by Marco Romano
 
   This library is free software; you can redistribute it and/or modify
   it under the same terms as Perl itself, either Perl version 5.8.4 or,
   at your option, any later version of Perl 5 you may have available.
-
-Donations like contribution for the development are appreciated. Contact me directly if you are interested.
 
 =cut
 

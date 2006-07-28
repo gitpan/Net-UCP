@@ -61,5 +61,5 @@ Revision history for Perl extension Net::UCP.
 	- Add clear_ucp_message() method (remove ETX and STX characters)
 	- add "clear" parameter in wait_in_loop method.
 
-0.24  Thu Jul 27 10:06:10 CEST 2006
+0.25  Fri Jul 28 12:30:51 CEST 2006
 	- wait_in_loop() bug fix
