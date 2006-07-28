@@ -14,7 +14,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw();
 our @EXPORT_OK = ();
 
-our $VERSION = '0.23';
+our $VERSION = '0.24';
 
 $VERSION = eval $VERSION; 
 
@@ -301,7 +301,7 @@ sub _init {
 
 
 
-##RAW MODE
+##RAW MODE - GET BACK - UNDEF
 
 #timeout, action
 #clear = 0,1
@@ -334,10 +334,14 @@ sub wait_in_loop {
 	    if (exists $arg{clear}) {
 		$self->clear_ucp_message(\$response) if ($arg{clear});
 	    }
-	    
+
+	    setitimer(ITIMER_REAL, $arg{timeout}, 0);
 	    return $response;
 	}
     }
+
+    setitimer(ITIMER_REAL, $arg{timeout}, 0);
+    return undef;
 }
 
 sub clear_ucp_message {

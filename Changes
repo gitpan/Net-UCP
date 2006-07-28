@@ -49,6 +49,7 @@ Revision history for Perl extension Net::UCP.
 	- Add more flexibility to create_fake_smsc()
 	- Optimized code (login() and submit_sms())
 	- some bug fix.
+	- Jump of quality.... mmmm...
 
 0.21  Wed Mar  2 16:23:40 CET 2005
 	- Patched line 177 (Thanks to Geurt on rt.cpan.org)
@@ -58,4 +59,7 @@ Revision history for Perl extension Net::UCP.
 
 0.23  Mon Oct 31 10:26:16 CET 2005
 	- Add clear_ucp_message() method (remove ETX and STX characters)
-	- add "clear" parameter in wait_in_loop mathod.
+	- add "clear" parameter in wait_in_loop method.
+
+0.24  Thu Jul 27 10:06:10 CEST 2006
+	- wait_in_loop() bug fix
