@@ -14,7 +14,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw();
 our @EXPORT_OK = ();
 
-our $VERSION = '0.25';
+our $VERSION = '0.26';
 
 $VERSION = eval $VERSION; 
 
@@ -118,7 +118,7 @@ sub send_sms {
              TIMEOUT => undef,
              @_);
 
-    my$timeout;
+    my $timeout;
 
     if(defined($args{TIMEOUT})) {
         my$tv=TimeoutValue->new(TIMEOUT=>$args{TIMEOUT});
@@ -145,20 +145,15 @@ sub send_sms {
     my $oadc_tmp = '';
     my $otoa_tmp = '';
 
-    if ((defined($args{SENDER_TEXT}) and length($args{SENDER_TEXT}))) {
-
-	($oadc_tmp, $otoa_tmp) = $self->_get_info_from($args{SENDER_TEXT});
-
-    } else {
-	$args{SENDER_TEXT} = ''; #empty from
-	$oadc_tmp = $self->{OBJ_EMI_COMMON}->encode_7bit($args{SENDER_TEXT});
-    }
-
+    ($oadc_tmp, $otoa_tmp) = $self->_get_info_from($args{SENDER_TEXT}) if ((defined($args{SENDER_TEXT}) 
+									    and 
+									    length($args{SENDER_TEXT})));
+	
     my %param_tmp = (
 		     op        => '51',
 		     operation => 1,
 		     adc       => $args{RECIPIENT},
-		     oadc      => $oadc_tmp,
+		     oadc      => $oadc_tmp,		     
 		     ac        => $self->{SHORT_CODE},
 		     mt        => (defined($args{MESSAGE_BINARY}) ? '4' : '3'),
 		     nb        => (defined($args{MESSAGE_BINARY}) ? 
@@ -200,7 +195,7 @@ sub _get_info_from {
     } else {
 	$otoa_tmp = '5039';
 	if (length ($from) > 11) {substr($from,11) = ''}
-	$oadc_tmp = $self->{OBJ_EMI_COMMON}->encode_7bit($from);
+	$oadc_tmp = $from;
     }
     
     return ($oadc_tmp,$otoa_tmp);
@@ -2085,12 +2080,14 @@ A Net::UCP object must be created with the new() constructor.
 Once this has been done, all commands are accessed via method calls on the object.
 
 *****
-If you have a good know how about EMI/UCP or if you have patience to read specification 
-you can use this module in raw mode. See RAW MODE for more informations.
+If you have a good know-how about EMI/UCP or if you have patience to read 
+specification you can use this module in raw mode. 
+See RAW MODE for more informations.
 *****
 
 =head1 EXAMPLE
-
+   
+    use Encode;   #you need it to convert text to GSM 03.38 Default Alphabet. See DATA CODING section
     use Net::UCP;
     
     ($recipient,$text,$sender) = @ARGV;
@@ -2286,7 +2283,7 @@ in the main application.
     $binary_message .= "04104D85D0690410A24824C49A6289B09D093126986A800";
 
     $emi->send_sms(
-		   RECIPIENT      =>'391232345678', 
+		   RECIPIENT      => '391232345678', 
 		   MESSAGE_TEXT   => 'A Message', 
 		   SENDER_TEXT    => 'Marco', 
 		   FLASH          => 1,
@@ -2563,7 +2560,7 @@ it returns a scalar value with UCP string or undef on error.
                                       op => '51',
                                       operation => 1,
                                       adc   => '00393311212',
-                                      oadc  => 'ALPHA@NUM',         #in the spec. it's wrong i suppose :)
+                                      oadc  => 'ALPHA@NUM',
                                       mt   => 3,
                                       amsg => 'Short Message for NEMUX',
                                       mcls => 1,
@@ -2571,7 +2568,7 @@ it returns a scalar value with UCP string or undef on error.
                                       );
 
      #you get back something like that :
-     #02/00130/O/51/00393311212/1041261419043AAB4D/////////////////3//
+     #02/00130/O/51/00393311212/10412614190438AB4D/////////////////3//
      #53686F7274204D65737361676520666F72204E454D5558////1////5039/////C8
 
      #ready for being sent through transmit_msg() to your SMSC
@@ -2725,12 +2722,28 @@ It accepts 5 optional parameters :  host, port, listen, output, action
 			  );
 
    
+=head1 DATA CODING
+
+SMSC default alphabet is GSM 03.38 (see link below or default_alphabet.html in the module package)
+
+ftp://ftp.unicode.org/Public/MAPPINGS/ETSI/GSM0338.TXT 
+
+the easiest way to make this conversion is to use Encode moudle and its encode method
+
+=item Example 
+
+  use Encode;
+  my $sender = encode('gsm0338', 'ALPHA@NUM'); 
+  
+  ... pass this value to ucp module ...
+
+  doing that UCP module will do right 7bit conversion and the result will be : 10412614190438AB4D 
 
 =back
 
 =head1 SEE ALSO
 
-C<IO::Socket>, ucp.pl
+C<IO::Socket>, C<Encode>, ucp.pl
 
 =head1 AUTHOR
 
@@ -2738,7 +2751,7 @@ Marco Romano, E<lt>nemux@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2004-2006 by Marco Romano
+Copyright (C) 2004-2007 by Marco Romano
 
   This library is free software; you can redistribute it and/or modify
   it under the same terms as Perl itself, either Perl version 5.8.4 or,
@@ -2753,5 +2766,5 @@ sub AUTOLOAD {
     $method =~ s/.*:://;
     $class = ref($_[0]) || $_[0];
 
-    croak "$class Method=$method, object=$object";
+    croak "$class Method=$method";
 }

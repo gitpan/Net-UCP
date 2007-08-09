@@ -63,3 +63,11 @@ Revision history for Perl extension Net::UCP.
 
 0.25  Fri Jul 28 12:30:51 CEST 2006
 	- wait_in_loop() bug fix
+
+0.26  Wed Aug  9 19:28:24 CEST 2007
+	- fix logical problem in the send_sms() patched _get_info_from() 
+	  there was a double 7bit conversion the firt one in the _get_info_from() 
+	  and the second one in the make_message()
+	- fix documentation, added DATA CODING section it explains (a little bit) 
+	how to convert text in GSM 03.38 alphabet using Encode module.
+	(Thanks to Jonas Pasche) 
