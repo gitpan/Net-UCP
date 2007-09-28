@@ -69,5 +69,16 @@ Revision history for Perl extension Net::UCP.
 	  there was a double 7bit conversion the firt one in the _get_info_from() 
 	  and the second one in the make_message()
 	- fix documentation, added DATA CODING section it explains (a little bit) 
-	how to convert text in GSM 03.38 alphabet using Encode module.
-	(Thanks to Jonas Pasche) 
+  	  how to convert text in GSM 03.38 alphabet using Encode module.
+	  (Thanks to Jonas Pasche - skytel.de) 
+
+0.27  Fri Sep 28 18:58:51 CEST 2007
+	- Net::UCP birthday!!! It was born 3 years ago!
+	- add new method send_sms_multipart() to send multipart messages ( with 
+	  text length > 160 characters )
+	- add more features to SMSCfAKE 
+	- add add_ucp_enclosure();
+        - add remove_ucp_enclosure();
+	- fix doc and add info about these new methods
+	- add new examples in ucp.pl
+	(Thanks to Guillaume Leroux - France Telecom R&D)

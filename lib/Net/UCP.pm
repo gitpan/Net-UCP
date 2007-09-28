@@ -14,7 +14,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw();
 our @EXPORT_OK = ();
 
-our $VERSION = '0.26';
+our $VERSION = '0.27';
 
 $VERSION = eval $VERSION; 
 
@@ -109,13 +109,13 @@ sub close_link {
 sub send_sms {
     my$self=shift();
     my%args=(
-             RECIPIENT => '',
-             MESSAGE_TEXT => '',
-             SENDER_TEXT => '',
-             UDH => undef,
+             RECIPIENT      => '',
+             MESSAGE_TEXT   => '',
+             SENDER_TEXT    => '',
+             UDH            => '',
              MESSAGE_BINARY => undef,
-	     FLASH => undef,
-             TIMEOUT => undef,
+	     FLASH          => undef,
+             TIMEOUT        => undef,
              @_);
 
     my $timeout;
@@ -142,28 +142,34 @@ sub send_sms {
     # It's OK to send an empty message, but not to use undef.
     defined($args{MESSAGE_TEXT})||($args{MESSAGE_TEXT}=' ');
 
-    my $oadc_tmp = '';
-    my $otoa_tmp = '';
+    my $oadcTmp = '';
+    my $otoaTmp = '';
 
-    ($oadc_tmp, $otoa_tmp) = $self->_get_info_from($args{SENDER_TEXT}) if ((defined($args{SENDER_TEXT}) 
+    ($oadcTmp, $otoaTmp) = $self->_get_info_from($args{SENDER_TEXT}) if ((defined($args{SENDER_TEXT}) 
 									    and 
 									    length($args{SENDER_TEXT})));
-	
+    
+    my $mclsTmp  = (defined($args{FLASH}) and ($args{FLASH} == 1)) ? 1 : ''; 
+    my $class    = ($mclsTmp) ? 0 : 1;
+ 
     my %param_tmp = (
 		     op        => '51',
 		     operation => 1,
 		     adc       => $args{RECIPIENT},
-		     oadc      => $oadc_tmp,		     
+		     oadc      => $oadcTmp,		     
 		     ac        => $self->{SHORT_CODE},
 		     mt        => (defined($args{MESSAGE_BINARY}) ? '4' : '3'),
 		     nb        => (defined($args{MESSAGE_BINARY}) ? 
 				   (length($args{MESSAGE_BINARY})/2)*8 : ''),
 		     dcs       => (defined($args{MESSAGE_BINARY}) ? '1' : ''),
-		     mcls      => ((defined($args{FLASH}) and ($args{FLASH} == 1)) ? 
-				   '0' : ''),
-		     otoa      => $otoa_tmp,
-		     xser      => (defined($args{MESSAGE_BINARY})&&defined($args{MESSAGE_BINARY}) ?
-				   make_xser("B", $args{UDH}) : '')
+		     mcls      => $mclsTmp,
+		     otoa      => $otoaTmp,
+		     xser      => (defined($args{MESSAGE_BINARY}) 
+				   && 
+				   defined($args{MESSAGE_BINARY}) 
+				   ? 
+				   make_xser("B", $args{UDH}, $class) : make_xser("T", $args{UDH}, $class)
+				   )
 		     );
     
     if (defined $args{MESSAGE_BINARY}) {
@@ -175,6 +181,79 @@ sub send_sms {
     my $message_string = $self->make_message(%param_tmp);
 
     $self->transmit_msg($message_string, $timeout, 1);
+}
+
+
+sub send_sms_multipart {
+    my $self = shift;
+    
+    my %argsLong =(
+		   RECIPIENT      => '',
+		   MESSAGE_TEXT   => '',
+		   SENDER_TEXT    => '',
+		   UDH            => undef,
+		   MESSAGE_BINARY => undef,
+		   FLASH          => undef,
+		   TIMEOUT        => undef,
+		   @_);
+
+    my $chunkBlock = 134;                
+    my $messageId  = random_int(1,255);  
+    
+    my $multiHash;
+    
+    my $txtTmp    = $argsLong{MESSAGE_TEXT};
+    my $countPart = 0;
+    my $chunk;
+    
+    while (length($txtTmp) != 0) {
+	
+        if (length($txtTmp) > 134) {
+            $txtTmp =~ s/((.){134})//;
+            $chunk = $1;
+        } else {
+            $chunk  = $txtTmp;
+            $txtTmp = '';
+        }
+	
+        $multiHash->{++$countPart} = $chunk;
+	
+    }
+    
+    my $textChunk = '';
+    my $k        = '';
+    my $udhChunk = '';
+    my $ret;
+
+    while (($k, $textChunk) = each %{$multiHash}) {
+        $udhChunk = "0106050003" 
+	    . sprintf("%02X", $messageId)
+            . sprintf("%02X", $countPart)
+            . sprintf("%02X", $k);
+	
+        $ret = $self->send_sms(
+			       RECIPIENT      => $argsLong{RECIPIENT},
+			       MESSAGE_TEXT   => $textChunk,
+			       SENDER_TEXT    => $argsLong{SENDER_TEXT},
+			       UDH            => $udhChunk,
+			       );
+    
+	return $ret if (!$ret || !defined($ret)); #it could be better
+
+    }
+    
+    return TRUE;
+
+}
+
+sub random_int ($$) {
+    my($min, $max) = @_;
+
+    return $min if $min == $max;
+    
+    ($min, $max) = ($max, $min)  if  $min > $max;
+    return $min + int rand(1 + $max - $min);
+
 }
 
 
@@ -201,34 +280,61 @@ sub _get_info_from {
     return ($oadc_tmp,$otoa_tmp);
 }
 
-#########Development....
+
 #make_xser() subfunction.
 #
 #Parameters:
 #1)Message Type   (it can be "T" -> Text or "B" -> Binary messages)
 #2)UserDataHeader (in hexadecimal without octet length)
-#
-#i make this func. to make some test. But it could be good to implement
-#other features
-####################################################################
-#if udh is undef udh will be to set to 020115 (8bit message)
-####################################################################
-sub make_xser($$) {
+#3)Message Class  (optional)
+##################################
+sub make_xser {
     my $type=shift;
     my $udh=shift;
-    my $xser_ret='';
+    my $class=shift;
 
-    return "020115" if (! defined ($udh));
-#count octets numbers UDH
+    my $xser_ret = '';
+    
+    $class = 1 if ($class eq '');
+
+#count UDH octest numbers
     my $udh_len = sprintf("%02X",length($udh)/2);
-#counts octets number of DD field
-#octets total number
+
+#count octets numbers of DD field
+#numero totale di ottetti
     my $udh_oct = sprintf("%02X",(length($udh)/2)+1);
 
-    $type eq "T" and $xser_ret='020100';
-    $type eq "B" and $xser_ret='01'.$udh_oct.$udh_len.$udh;
+    if (not $class) {
 
+        $type eq "T" and $xser_ret='020110';
+	
+        if ($udh =~ m/\d+/ and $type eq "T") {
+            $xser_ret = $udh;
+        }
+	
+    } else {
+	
+        if ($udh =~ m/\d+/ and $type eq "T") {
+            $xser_ret = $udh;
+        } else {
+            $xser_ret='';
+        }
+	
+    }
+    
+#XSER for binary message with udh
+#XSER multipart
+#TT 02 -> Xser per DCS
+#LL 01 -> ottetti DD
+#DD 00 -> imposta data coding scheme a 8 bit
+#TT 01 -> Xser per UDH
+#LL $udh_oct -> otetti UDH information field
+#DD -> contiene UDH field specificato dall'utente
+    
+    $type eq "B" and $xser_ret='02011501'.$udh_oct.$udh_len.$udh;
+    
     return $xser_ret;
+    
 }
 
 sub _init {
@@ -296,7 +402,7 @@ sub _init {
 
 
 
-##RAW MODE - GET BACK - UNDEF
+##RAW MODE
 
 #timeout, action
 #clear = 0,1
@@ -327,9 +433,9 @@ sub wait_in_loop {
             } until ($buffer eq $self->{OBJ_EMI_COMMON}->ETX);   
 	    
 	    if (exists $arg{clear}) {
-		$self->clear_ucp_message(\$response) if ($arg{clear});
+		$self->remove_ucp_enclosure(\$response) if ($arg{clear});
 	    }
-
+	    
 	    setitimer(ITIMER_REAL, $arg{timeout}, 0);
 	    return $response;
 	}
@@ -339,6 +445,17 @@ sub wait_in_loop {
     return undef;
 }
 
+sub remove_ucp_enclosure {
+    my ($self, $msg) = @_;   
+    $$msg =~ s/$self->{OBJ_EMI_COMMON}->ETX|$self->{OBJ_EMI_COMMON}->STX//g;
+}
+
+sub add_ucp_enclosure {
+    my ($self, $msg) = @_;  
+    $$msg = $self->{OBJ_EMI_COMMON}->ETX . $$msg . $self->{OBJ_EMI_COMMON}->STX;
+}
+
+#for old version
 sub clear_ucp_message {
     my ($self, $msg) = @_;   
     $$msg =~ s/$self->{OBJ_EMI_COMMON}->ETX|$self->{OBJ_EMI_COMMON}->STX//g;
@@ -1728,8 +1845,10 @@ sub make_61 {
 
 #it doesn't get response!
 #param : host, port, listen
-#param : output, action
-############################
+#param : output, action, sending
+#param : reading_mode  (0 = line feed at the end, 1 = reading defined message length - default 1Kb)
+#param  : max_len (for reading_mode = 1)
+##################################
 sub create_fake_smsc {
     my $self = shift;
     my %opt = @_;
@@ -1744,6 +1863,20 @@ sub create_fake_smsc {
 					    );
     croak "Fake SMSC could not be created, [$!]\n" unless ($main_socket);
     
+
+    my $debug = (exists $opt{output} and $opt{output} == 1) ? 1 : 0; 
+
+    my $reading_mode = 0;
+    if (exists $opt{reading_mode}) {
+	if ($opt{reading_mode} != 0 || $opt{reading_mode} != 1) {
+	    $reading_mode = 0;
+	} else {
+	    $reading_mode = $opt{reading_mode};
+	}
+    } 
+    
+    my $max_len = (exists $opt{max_len} and $opt{max_len} >= 1) ? $opt{max_len} : 1024; 
+    
     my $readable_handles = new IO::Select();
     $readable_handles->add($main_socket);
 
@@ -1756,10 +1889,16 @@ sub create_fake_smsc {
 		$new_sock = $sock->accept();
 		$readable_handles->add($new_sock);
 	    } else {
-		my $message = <$sock>;
+
+		print "[*] Reading on socket [$sock]\n" if $debug;
+		my $message = 0;
+
+		$message = <$sock> if (!$reading_mode);
+		$sock->recv($message, $max_len) if ($reading_mode == 1);
+		
 		if ($message) {
 		    $message =~ s/[\n\r]//g;
-		    if (exists $opt{output} and $opt{output} == 1) {
+		    if ($debug) {
 			print "\n\n[*] UCP string -\n";
 			print "-"x30;
 			print "\n" . $message . "\n";
@@ -1768,20 +1907,29 @@ sub create_fake_smsc {
 		    }
 		    if (exists $opt{action} and ref($opt{action}) eq "CODE") {
 			my $resp_be = $opt{action}($message);
-			print $sock $resp_be if $resp_be ne ''; 
+			print $sock $resp_be if (defined($resp_be) && ($resp_be ne ''));
+
+			if (exists $opt{sending} and ref($opt{sending}) eq "CODE") {
+			    my $next_ucp_message = $opt{sending}();
+			    print $sock $next_ucp_message if (defined($next_ucp_message) && ($next_ucp_message ne ''));
+                        }
+
 		    } else {
 			my $response = $self->parse_message($message);
 			if (ref($response) eq "HASH") {			    
 			    foreach my $k (keys %{$response}) {
-				print "\nP.Name: [$k] - Value:\t$response->{$k}";
+				print "\nP.Name: [$k] - Value:\t$response->{$k}" if $debug;
 			    }
 			} else {
 			    print "Error while parsing message\n";
 			}
 		    }
 		} else {
+		    
+		    print "[*] Closing socket [$sock]\n" if $debug;
 		    $readable_handles->remove($sock);
 		    close($sock);
+		
 		}
 	    }
 	}
@@ -2246,7 +2394,7 @@ C<STYP=E<gt>> Subtype of Operation
               6 = verify item mt-list
 
 
-C<VERS=E<gt>> (...Test...) default value is 0100
+C<VERS=E<gt>> (Test) default value is 0100
 
 Any errors detected will be printed on C<STDERR> if the C<WARN=E<gt>> parameter in the constructor evaluates to I<true>.
 
@@ -2392,6 +2540,17 @@ If the response is that alarm() is not implemented, then you're out of luck.
 You can still use the module, but in case the SMSC doesn't respond as expected
 your application will wait B<indefinitively>.
 
+=item send_sms_multipart()
+
+use it as send_sms() but you are able to send messages with text length bigger then 160 characters. 
+
+$emi->send_sms_multipart(
+			 RECIPIENT      => '+393291212121',
+			 MESSAGE_TEXT   => 'Message text with more then 160 characters',
+			 SENDER_TEXT    => 'Marco',
+			 );
+
+( Don't use it in a production environment. Please test it and contact me for improvment and bugs )
 
 =item logout()
 
@@ -2417,13 +2576,29 @@ returns nothing (void)
 
 =head2 Methods
 
-=item clear_ucp_message()
+=item clear_ucp_message() [ DEPRECATED ]
 
 this method remove STX and ETX characters from string received in input and return nothing. 
 
 =item EXAMPLE 
     
     $emi_obj->clear_ucp_message(\$ucp_message);
+
+=item remove_ucp_enclosure()
+
+this method REMOVE STX and ETX characters from string received in input and return nothing. 
+
+=item EXAMPLE 
+    
+    $emi_obj->remove_ucp_enclosure(\$ucp_message);
+
+=item add_ucp_enclosure()
+
+this method ADD STX and ETX characters to string received in input and return nothing. 
+
+=item EXAMPLE 
+    
+    $emi_obj->add_ucp_enclosure(\$ucp_message);
 
 =item wait_in_loop() 
 
@@ -2676,9 +2851,30 @@ another example.. op 02
 
 =head2 Description 
 
-This module version support a first release of SMSCfAKE, with this feature you are able to start a simple smsc 
-that receive messages from any client. It parses and prints UCP messages.
-It doesn't get back response in this version.
+This module version support second release of SMSCfAKE, with this feature you are able to start a simple smsc 
+that receive messages from any client. It parses and prints out UCP messages. 
+Using C<action> parameter is possible to add a call back that SMSCfAKE will call when it'll receive an UCP 
+string. In order to improve the possibility to use it as an application tester i've added another parameter :
+C<sending> to add another call back that it'll call after first call back C<action>
+
+Simple Interaction Diagram :
+
+         Client                                  SMSCfAKE 
+           |             send UCP string             |  
+           | --------------------------------------> |
+           |   send "action" call back return value  |        
+           | <-------------------------------------- |
+           |   send "sending" call back return value |
+           | <-------------------------------------- |
+           |                                         |
+           |                                         |
+           |                                         |
+
+Example :
+
+   1) Client send    : OP 51 type O (submit sms)
+   2) SMSCfAKE send  : OP 51 type R (submit sms response)
+   3) SMSCfAKE send  : OP 53 type O (delivery notification)
 
 =head2 How-to create a simple Fake SMSC
 
@@ -2696,8 +2892,12 @@ It accepts 5 optional parameters :  host, port, listen, output, action
                 will be UCP String got back from client. 
                 It could be get back a UCP string response into a scalar value. This value will be printed 
                 get back to the client.
-                Without this parameter smsc fake parse UCP string and will print it on stdout. 
-    
+                Without this parameter smsc fake parse UCP string and will print it on stdout.
+    6) sending (another internal subroutine useful to send another UCP string to client)
+    7) reading_mode : it can be equal to 0 to receive UCP string with new line at the end 
+                      it can be equal to 1 to receive UCP string without new line at the end
+    8) max_len      : max byte length of ucp string receive in reading_mode 1 default value 1024 (1Kb)
+
 =item EXAMPLE 
 
    $ucp = Net::UCP->new(FAKE => 1);
@@ -2716,34 +2916,64 @@ It accepts 5 optional parameters :  host, port, listen, output, action
    $ucp->create_fake_smsc(
 			  host   => 10.10.10.21,
 			  port   => 1234,
-			  listen => 10,
-			  output => 1,
 			  action => \&code_ref
+			  );
+
+   $ucp->create_fake_smsc(
+			  host         => 10.10.10.21,
+			  port         => 5000,
+			  listen       => 10,
+			  output       => 1,
+			  reading_mode => 1,
+			  max_len      => 2048,
+			  action       => \&ucp_response_call_back,
+			  sending      => \&delivery_notification_call_back
 			  );
 
    
 =head1 DATA CODING
 
-SMSC default alphabet is GSM 03.38 (see link below or default_alphabet.html in the module package)
+SMSC default alphabet is GSM 03.38 ( ftp://ftp.unicode.org/Public/MAPPINGS/ETSI/GSM0338.TXT )
 
-ftp://ftp.unicode.org/Public/MAPPINGS/ETSI/GSM0338.TXT 
+the easiest way to make this conversion is to use Encode module and its encode method
 
-the easiest way to make this conversion is to use Encode moudle and its encode method
-
-=item Example 
+=item Encoding Example 
 
   use Encode;
-  my $sender = encode('gsm0338', 'ALPHA@NUM'); 
   
-  ... pass this value to ucp module ...
+  #doing that UCP module will do right 7bit conversion and the result will be : 10412614190438AB4D 
+  my $sender = encode('gsm0338', 'ALPHA@NUM');  
+  my $amsg_example = encode('gsm0338', 'Short Message for NEMUX by Net::UCP');
 
-  doing that UCP module will do right 7bit conversion and the result will be : 10412614190438AB4D 
+  #ucp string will be : 
+  #01/00154/O/51/00393201001/10412614190438AB4D/////////////////3//
+  #53686F7274204D65737361676520666F72204E454D5558206279204E65743A3A554350\////1////5039/////C7
+
+  $ucp_string = $emi->make_message(
+                                   op => '51',
+                                   operation => 1,
+                                   adc   => '00393201001',
+                                   oadc  => $sender,
+                                   mt   => 3,
+                                   amsg => $amsg_example,
+                                   mcls => 1,
+                                   otoa => 5039,
+                                 );
+		
+   if ( defined($ucp_string) ) {
+       ($acknowledge, $error_number, $error_text) = $emi->transmit_msg( $ucp_string, 10, 1 );
+        print $error_text ."\n";
+   } else {
+       die "Error while making UCP String OP 51\n";
+   }
+		
+   $emi->close_link();
 
 =back
 
 =head1 SEE ALSO
 
-C<IO::Socket>, C<Encode>, ucp.pl
+C<IO::Socket>, Encode, ucp.pl
 
 =head1 AUTHOR
 

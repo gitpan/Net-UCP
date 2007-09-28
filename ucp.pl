@@ -29,6 +29,36 @@ $emi->open_link() or die ($!);
 $emi->close_link();
 
 
+#send one message with send_sms_long();
+#########################################
+$emi = Net::UCP->new(
+		     SMSC_HOST   => '127.0.0.1', # use fake-smsc or nc -l -p 6666 to make some tests
+		     SMSC_PORT   => 6666,
+		     );
+
+$emi->open_link() or die ($!);
+
+($acknowledge, $error_number,$error_text) = $emi->login(
+							SMSC_ID    => $login,
+							SMSC_PW    => $password,
+							);
+
+$long_text = "0123456789AAAAAAAAAA0123456789AAAAAAAAAA0123456789AAAAAAAAAA0123456789AAAAAAAAAA0123456789AAAAAAAAAA0123456789AAAAAAAAAA0123456789AAAAAAAAAA0123456789AAAAAAAAAA This Message has got more then 160 characters and it'll be received as unique message";
+
+if (!$emi->send_sms_multipart(
+			      RECIPIENT    => '0039328120000',
+			      MESSAGE_TEXT => $long_text,
+			      SENDER_TEXT  => "Marco"
+			      )) {
+
+    print "Error while sending MultiMessage\n";
+    
+} else {
+
+    print "MultiMessage correctly sent!\n";
+
+}
+
 #another message in RAW MODE
 ###############################
 
