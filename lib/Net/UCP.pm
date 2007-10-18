@@ -1,3 +1,21 @@
+#########################################################################
+# - Net::UCP 0.28 - 
+# 
+# Version : 0.28
+# Date    : 18/10/2007
+#
+# Library based on EMI - UCP INTERFACE Specification 
+# Version 3.5 of December 1999 
+# Spcification Copyright (C) CMG telecommunication & Utilities BV Division 
+# Advanced Technology
+# 
+# Library Copyright (C) 2004-2007 Marco Romano <nemux@cpan.org>
+#
+# This library is free software; you can redistribute it and/or modify
+# it under the same terms as Perl itself, either Perl version 5.8.4 or,
+# at your option, any later version of Perl 5 you may have available.
+#
+#########################################################################
 package Net::UCP;
 
 use strict;
@@ -452,7 +470,7 @@ sub remove_ucp_enclosure {
 
 sub add_ucp_enclosure {
     my ($self, $msg) = @_;  
-    $$msg = $self->{OBJ_EMI_COMMON}->ETX . $$msg . $self->{OBJ_EMI_COMMON}->STX;
+    $$msg = $self->{OBJ_EMI_COMMON}->STX . $$msg . $self->{OBJ_EMI_COMMON}->ETX;
 }
 
 #for old version
@@ -2974,6 +2992,10 @@ the easiest way to make this conversion is to use Encode module and its encode m
 =head1 SEE ALSO
 
 C<IO::Socket>, Encode, ucp.pl
+
+=head1 TODO
+
+Clear and better documentation
 
 =head1 AUTHOR
 

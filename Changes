@@ -82,3 +82,6 @@ Revision history for Perl extension Net::UCP.
 	- fix doc and add info about these new methods
 	- add new examples in ucp.pl
 	(Thanks to Guillaume Leroux - France Telecom R&D)
+
+0.28  Thu Oct 18 09:42:17 CEST 2007	
+	- Stupid but important bug fix in remove_ucp_enclosure()
