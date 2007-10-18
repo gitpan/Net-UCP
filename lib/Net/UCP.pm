@@ -32,7 +32,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw();
 our @EXPORT_OK = ();
 
-our $VERSION = '0.27';
+our $VERSION = '0.28';
 
 $VERSION = eval $VERSION; 
 
@@ -2245,11 +2245,9 @@ such service provider.) If you want to help my project send me info about some S
 A Net::UCP object must be created with the new() constructor.
 Once this has been done, all commands are accessed via method calls on the object.
 
-*****
 If you have a good know-how about EMI/UCP or if you have patience to read 
 specification you can use this module in raw mode. 
 See RAW MODE for more informations.
-*****
 
 =head1 EXAMPLE
    
@@ -2562,11 +2560,12 @@ your application will wait B<indefinitively>.
 
 use it as send_sms() but you are able to send messages with text length bigger then 160 characters. 
 
-$emi->send_sms_multipart(
-			 RECIPIENT      => '+393291212121',
-			 MESSAGE_TEXT   => 'Message text with more then 160 characters',
-			 SENDER_TEXT    => 'Marco',
-			 );
+    $emi->send_sms_multipart(
+			     RECIPIENT      => '+393291212121',
+			     MESSAGE_TEXT   => 'Message text with more then 160 characters',
+			     SENDER_TEXT    => 'Marco',
+			     );
+
 
 ( Don't use it in a production environment. Please test it and contact me for improvment and bugs )
 
@@ -2871,9 +2870,9 @@ another example.. op 02
 
 This module version support second release of SMSCfAKE, with this feature you are able to start a simple smsc 
 that receive messages from any client. It parses and prints out UCP messages. 
-Using C<action> parameter is possible to add a call back that SMSCfAKE will call when it'll receive an UCP 
+Using C<action> parameter is possible to add a call back that SMSCfAKE will call when it will receive an UCP 
 string. In order to improve the possibility to use it as an application tester i've added another parameter :
-C<sending> to add another call back that it'll call after first call back C<action>
+C<sending> to add another call back that it will call after first call back C<action>
 
 Simple Interaction Diagram :
 
