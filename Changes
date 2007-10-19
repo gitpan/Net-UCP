@@ -85,3 +85,10 @@ Revision history for Perl extension Net::UCP.
 
 0.28  Thu Oct 18 09:42:17 CEST 2007	
 	- Stupid but important bug fix in remove_ucp_enclosure()
+
+0.28-2 Fri Oct 19 09:15:23 CEST 2007
+	- Fix make test during installation
+	  Summary of my perl5 (5.0 patchlevel 5 subversion 5) configuration:
+          Platform:
+          osname=freebsd, osvers=6.1-release, archname=i386-freebsd
+	  Thanks to cpan testers (srezic)

@@ -27,12 +27,13 @@ use Time::HiRes qw(setitimer ITIMER_REAL);
 
 require Exporter;
 
-our @ISA = qw(Exporter);
+use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
 
-our @EXPORT = qw();
-our @EXPORT_OK = ();
+@ISA = qw(Exporter);
+@EXPORT = qw();
+@EXPORT_OK = ();
 
-our $VERSION = '0.28';
+$VERSION = '0.28';
 
 $VERSION = eval $VERSION; 
 
