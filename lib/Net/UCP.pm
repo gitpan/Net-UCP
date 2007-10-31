@@ -1,8 +1,8 @@
 #########################################################################
-# - Net::UCP 0.28 - 
+# - Net::UCP 0.29 - 
 # 
-# Version : 0.28
-# Date    : 18/10/2007
+# Version : 0.29
+# Date    : 31/10/2007
 #
 # Library based on EMI - UCP INTERFACE Specification 
 # Version 3.5 of December 1999 
@@ -33,7 +33,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
 @EXPORT = qw();
 @EXPORT_OK = ();
 
-$VERSION = '0.28';
+$VERSION = '0.29';
 
 $VERSION = eval $VERSION; 
 
@@ -2034,18 +2034,6 @@ use constant NACK=>'N';
 
 use constant DEBUG=>0;
 
-use vars qw(%accent_table);
-
-#IA5 by vi
-%accent_table = (
-                 '05' => '0xe8',
-                 '04' => '0xe9',
-                 '06' => '0xf9',
-                 '07' => '0xec',
-                 '08' => '0xf2',
-                 '7F' => '0xe0'
-                 );
-
 sub new {
     my$self={};
     bless($self,shift())->_init(@_);
@@ -2118,11 +2106,7 @@ sub ia5_decode {
     
     while (length($msg)) {
 	($tmp,$msg) = ($msg =~ /(..)(.*)/);
-	if ($accent_table{$tmp}) {
-	    $out .= sprintf("%s", chr(hex($accent_table{$tmp})));
-	} else {
-	    $out .= sprintf("%s", chr(hex($tmp)));
-	}
+	$out .= sprintf("%s", chr(hex($tmp)));
     }
     
     return ($out);
@@ -2900,7 +2884,7 @@ Is possible to create a simple Fake SMSC through method reported below.
 
 =item create_smsc_fake()
 
-It accepts 5 optional parameters :  host, port, listen, output, action
+It accepts 8 optional parameters :  host, port, listen, output, action, sending, reading_mode, max_len
 
     1) host : set smsc address (default are 127.0.0.1)
     2) port : set smsc port (default are 6666)
@@ -2911,7 +2895,7 @@ It accepts 5 optional parameters :  host, port, listen, output, action
                 It could be get back a UCP string response into a scalar value. This value will be printed 
                 get back to the client.
                 Without this parameter smsc fake parse UCP string and will print it on stdout.
-    6) sending (another internal subroutine useful to send another UCP string to client)
+    6) sending      : (another internal subroutine useful to send another UCP string to client)
     7) reading_mode : it can be equal to 0 to receive UCP string with new line at the end 
                       it can be equal to 1 to receive UCP string without new line at the end
     8) max_len      : max byte length of ucp string receive in reading_mode 1 default value 1024 (1Kb)

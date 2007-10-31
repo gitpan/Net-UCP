@@ -8,7 +8,7 @@ use ExtUtils::AutoInstall(
 WriteMakefile(
 	      NAME              => 'Net::UCP',
 	      VERSION_FROM      => 'lib/Net/UCP.pm', 
-	      ($] >= 5.005 ?     
+	      ($] >= 5.006 ?     
 	       (ABSTRACT_FROM  => 'lib/Net/UCP.pm', 
 		AUTHOR         => 'Marco Romano <nemux@cpan.org>') : ()),
 	      );

@@ -92,3 +92,7 @@ Revision history for Perl extension Net::UCP.
           Platform:
           osname=freebsd, osvers=6.1-release, archname=i386-freebsd
 	  Thanks to cpan testers (srezic)
+
+0.29  Wed Oct 31 16:16:45 CET 2007
+	- Force Makefile.PL to work with perl 5.006
+	
