@@ -95,4 +95,9 @@ Revision history for Perl extension Net::UCP.
 
 0.29  Wed Oct 31 16:16:45 CET 2007
 	- Force Makefile.PL to work with perl 5.006
-	
+
+0.30 Tue Nov 27 10:53:49 CET 2007
+	- 2 bug fix
+	-- parse_60 checksum field
+	-- decoding oadc when otoa field is set on 5039
+	Thanks to Filippo Dattola 

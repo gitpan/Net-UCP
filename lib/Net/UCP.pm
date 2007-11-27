@@ -1,8 +1,8 @@
 #########################################################################
-# - Net::UCP 0.29 - 
+# - Net::UCP 0.30 - 
 # 
-# Version : 0.29
-# Date    : 31/10/2007
+# Version : 0.30
+# Date    : 27/11/2007
 #
 # Library based on EMI - UCP INTERFACE Specification 
 # Version 3.5 of December 1999 
@@ -33,7 +33,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
 @EXPORT = qw();
 @EXPORT_OK = ();
 
-$VERSION = '0.29';
+$VERSION = '0.30';
 
 $VERSION = eval $VERSION; 
 
@@ -1283,7 +1283,7 @@ sub _parse_5x {
     if ($mess{type} eq "O") {
 	$mess{adc} = $ucp[4];
 	$mess{otoa} = $ucp[32];
-	$mess{oadc} = ($mess{otoa} eq "5039") ? $self->{OBJ_EMI_COMMON}->decode_7bit($ucp[5]) : $ucp[5];
+	$mess{oadc} = ($mess{otoa} eq "5039") ? $self->{OBJ_EMI_COMMON}->decode_7bit(substr($ucp[5],2)) : $ucp[5];
 	$mess{ac} = $ucp[6];
 	$mess{nrq} = $ucp[7];
 	$mess{nadc} = $ucp[8]; 
@@ -1622,7 +1622,7 @@ sub parse_60 {
 	$mess{lnpi} = $ucp[13];
 	$mess{opid} = $ucp[14];
 	$mess{res1} = $ucp[15];
-	$mess{checksum} = $ucp[37];
+	$mess{checksum} = $ucp[16];
     } else {
 	if ($ucp[4] eq ACK) {
 	    $mess{ack} = $ucp[4];
