@@ -101,3 +101,8 @@ Revision history for Perl extension Net::UCP.
 	-- parse_60 checksum field
 	-- decoding oadc when otoa field is set on 5039
 	Thanks to Filippo Dattola 
+
+0.31 Fri Dec 14 09:36:00 CET 2007 
+	- 2 minor bug fix
+	- crate_fake_smsc and using of 
+	  ETX / STX constant in regular expression 

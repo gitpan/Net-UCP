@@ -1,8 +1,8 @@
 #########################################################################
-# - Net::UCP 0.30 - 
+# - Net::UCP 0.31 - 
 # 
-# Version : 0.30
-# Date    : 27/11/2007
+# Version : 0.31
+# Date    : 14/12/2007
 #
 # Library based on EMI - UCP INTERFACE Specification 
 # Version 3.5 of December 1999 
@@ -33,7 +33,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
 @EXPORT = qw();
 @EXPORT_OK = ();
 
-$VERSION = '0.30';
+$VERSION = '0.31';
 
 $VERSION = eval $VERSION; 
 
@@ -48,13 +48,13 @@ sub new {bless({},shift())->_init(@_);}
 sub login {
     my$self=shift();
     my %args=(
-	      SMSC_ID => '',
-	      SMSC_PW => '',
+	      SMSC_ID    => '',
+	      SMSC_PW    => '',
 	      SHORT_CODE => undef,
-	      ONPI => '',
-	      OTON => '',
-	      STYP => 1,       #def 1 (open session)
-	      VERS => '0100',  #def 0100
+	      ONPI       => '',
+	      OTON       => '',
+	      STYP       => 1,       #def 1 (open session)
+	      VERS       => '0100',  #def 0100
 	      @_);
 
     # Conditionally open the socket unless already opened.
@@ -359,16 +359,16 @@ sub make_xser {
 sub _init {
     my$self=shift();
     $self->{OBJ_EMI_COMMON}=Common->new();
-    my%args=(
-	     FAKE=>0, 
-	     SMSC_HOST=>'',
-             SMSC_PORT=>$self->{OBJ_EMI_COMMON}->DEF_SMSC_PORT,
-             SENDER_TEXT=>'',
-             WARN=>0,
-             TIMEOUT=>undef,
-             SRC_HOST=>undef,
-             SRC_PORT=>undef,
-             @_);
+    my %args =(
+	       FAKE        => 0, 
+	       SMSC_HOST   => '',
+	       SMSC_PORT   => $self->{OBJ_EMI_COMMON}->DEF_SMSC_PORT,
+	       SENDER_TEXT => '',
+	       WARN        => 0,
+	       TIMEOUT     => undef,
+	       SRC_HOST    => undef,
+	       SRC_PORT    => undef,
+	       @_);
 
     $self->{TRN_OBJ}=TranNbr->new();
 
@@ -466,7 +466,7 @@ sub wait_in_loop {
 
 sub remove_ucp_enclosure {
     my ($self, $msg) = @_;   
-    $$msg =~ s/$self->{OBJ_EMI_COMMON}->ETX|$self->{OBJ_EMI_COMMON}->STX//g;
+    $$msg =~ s/${\$self->{OBJ_EMI_COMMON}->ETX}|${\$self->{OBJ_EMI_COMMON}->STX}//g;
 }
 
 sub add_ucp_enclosure {
@@ -1887,7 +1887,7 @@ sub create_fake_smsc {
 
     my $reading_mode = 0;
     if (exists $opt{reading_mode}) {
-	if ($opt{reading_mode} != 0 || $opt{reading_mode} != 1) {
+	if ($opt{reading_mode} != 0 && $opt{reading_mode} != 1) {
 	    $reading_mode = 0;
 	} else {
 	    $reading_mode = $opt{reading_mode};

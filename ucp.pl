@@ -7,69 +7,14 @@ use UCP;
 $login = "login";
 $password = "password";
 
-#sent one message with send_sms();
-###################################
-$emi = Net::UCP->new(
-		     SMSC_HOST   => '127.0.0.1', # use fake-smsc or nc -l -p 6666 to make some tests
-		     SMSC_PORT   => 6666,
-		     );
-
-$emi->open_link() or die ($!);
-
-($acknowledge,$error_number,$error_text) = $emi->login(
-						       SMSC_ID    => $login,
-						       SMSC_PW    => $password,
-						       );
-
-($acknowledge,$error_number,$error_text) = $emi->send_sms(
-							  RECIPIENT      => '00393001121',
-							  MESSAGE_TEXT   => "Test Net::UCP",
-							  SENDER_TEXT    => "NEMUX",
-							  );
-$emi->close_link();
-
-
-#send one message with send_sms_long();
-#########################################
-$emi = Net::UCP->new(
-		     SMSC_HOST   => '127.0.0.1', # use fake-smsc or nc -l -p 6666 to make some tests
-		     SMSC_PORT   => 6666,
-		     );
-
-$emi->open_link() or die ($!);
-
-($acknowledge, $error_number,$error_text) = $emi->login(
-							SMSC_ID    => $login,
-							SMSC_PW    => $password,
-							);
-
-$long_text = "0123456789AAAAAAAAAA0123456789AAAAAAAAAA0123456789AAAAAAAAAA0123456789AAAAAAAAAA0123456789AAAAAAAAAA0123456789AAAAAAAAAA0123456789AAAAAAAAAA0123456789AAAAAAAAAA This Message has got more then 160 characters and it'll be received as unique message";
-
-if (!$emi->send_sms_multipart(
-			      RECIPIENT    => '0039328120000',
-			      MESSAGE_TEXT => $long_text,
-			      SENDER_TEXT  => "Marco"
-			      )) {
-
-    print "Error while sending MultiMessage\n";
-    
-} else {
-
-    print "MultiMessage correctly sent!\n";
-
-}
-
-#another message in RAW MODE
-###############################
-
 #INIT
 $emi = Net::UCP->new(
-		     SMSC_HOST   => 'ucp.example.com',
-		     SMSC_PORT   => 5555,
-		     SRC_HOST   => '10.0.10.1',
+#		     SMSC_HOST   => 'ucp.example.com',
+#		     SMSC_PORT   => 5555,
+#		     SRC_HOST   => '10.0.10.1',
 		     );
 
-$emi->open_link() or die ($!);
+#$emi->open_link() or die ($!);
 
 #LOGIN
 $ucp_string = $emi->make_message(
@@ -105,6 +50,7 @@ $ucp_string = $emi->make_message(
 				 mcls => 1,
 				 otoa => 5039,
 				 );
+
 if ( defined($ucp_string) ) {
     ($acknowledge, $error_number, $error_text) = $emi->transmit_msg( $ucp_string, 10, 1 );
     print $error_text ."\n";
