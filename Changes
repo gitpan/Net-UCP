@@ -106,3 +106,8 @@ Revision history for Perl extension Net::UCP.
 	- 2 minor bug fix
 	- crate_fake_smsc and using of 
 	  ETX / STX constant in regular expression 
+
+0.32 Fri Mar 28 09:24:39 CET 2008
+	- 1 bug fix
+	-- rt.cpan.org ticket id 34495
+	Thanks to Christopherus Goo

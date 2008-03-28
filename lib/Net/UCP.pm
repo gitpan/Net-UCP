@@ -1,15 +1,15 @@
 #########################################################################
-# - Net::UCP 0.31 - 
+# - Net::UCP 0.32 - 
 # 
-# Version : 0.31
-# Date    : 14/12/2007
+# Version : 0.32
+# Date    : 28/03/2008
 #
 # Library based on EMI - UCP INTERFACE Specification 
 # Version 3.5 of December 1999 
 # Spcification Copyright (C) CMG telecommunication & Utilities BV Division 
 # Advanced Technology
 # 
-# Library Copyright (C) 2004-2007 Marco Romano <nemux@cpan.org>
+# Library Copyright (C) 2004-2008 Marco Romano <nemux@cpan.org>
 #
 # This library is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself, either Perl version 5.8.4 or,
@@ -33,7 +33,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
 @EXPORT = qw();
 @EXPORT_OK = ();
 
-$VERSION = '0.31';
+$VERSION = '0.32';
 
 $VERSION = eval $VERSION; 
 
@@ -1302,9 +1302,9 @@ sub _parse_5x {
 	$mess{dscts} = $ucp[21];
 	$mess{mt} = $ucp[22];
 	$mess{nb} = $ucp[23];
-        $mess{nmsg} = $ucp[24] if $mess{mt} == 2;
-        $mess{amsg} = $self->{OBJ_EMI_COMMON}->ia5_decode($ucp[24]) if $mess{mt} == 3;
-	$mess{tmsg} = $ucp[24] if $mess{mt} == 4;
+        $mess{nmsg} = $ucp[24] if ($mess{mt} && $mess{mt} == 2);
+        $mess{amsg} = $self->{OBJ_EMI_COMMON}->ia5_decode($ucp[24]) if ($mess{mt} && $mess{mt} == 3);
+	$mess{tmsg} = $ucp[24] if ($mess{mt} && $mess{mt} == 4);
 	$mess{mms} = $ucp[25];
 	$mess{pr} = $ucp[26];
 	$mess{dcs} = $ucp[27];
@@ -1604,10 +1604,10 @@ sub parse_60 {
 
     my (@ucp) = split($self->{OBJ_EMI_COMMON}->UCP_DELIMITER,$response);
     #header...
-    $mess{trn} = $ucp[0];
-    $mess{len} = $ucp[1];
+    $mess{trn}  = $ucp[0];
+    $mess{len}  = $ucp[1];
     $mess{type} = $ucp[2];
-    $mess{ot} = $ucp[3];
+    $mess{ot}   = $ucp[3];
     
     if ($mess{type} eq "O") {
 	$mess{oadc} = $ucp[4];
@@ -2979,6 +2979,7 @@ C<IO::Socket>, Encode, ucp.pl
 
 =head1 TODO
 
+A good unit test
 Clear and better documentation
 
 =head1 AUTHOR
@@ -2987,7 +2988,7 @@ Marco Romano, E<lt>nemux@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2004-2007 by Marco Romano
+Copyright (C) 2004-2008 by Marco Romano
 
   This library is free software; you can redistribute it and/or modify
   it under the same terms as Perl itself, either Perl version 5.8.4 or,
