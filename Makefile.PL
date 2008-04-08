@@ -4,9 +4,9 @@ use ExtUtils::AutoInstall(
 				      'IO::Socket'   => '0', 
 				      'IO::Select'   => '0', 
 				      'Time::HiRes'  => '0',
-				      'Net::UCP::Common'             => '0',
-				      'Net::UCP::IntTimeout'         => '0',
-				      'Net::UCP::TransactionManager' => '0',]
+				      'Net::UCP::Common'             => '0.01',
+				      'Net::UCP::IntTimeout'         => '0.02',
+				      'Net::UCP::TransactionManager' => '0.01',]
 			  );
 WriteMakefile(
 	      NAME              => 'Net::UCP',

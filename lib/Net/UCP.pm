@@ -1,7 +1,7 @@
 #########################################################################
-# - Net::UCP 0.33 - 
+# - Net::UCP 0.34 - 
 # 
-# Version : 0.33
+# Version : 0.34
 # Date    : 08/04/2008
 #
 # Library based on EMI - UCP INTERFACE Specification 
@@ -37,7 +37,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
 @EXPORT = qw();
 @EXPORT_OK = ();
 
-$VERSION = '0.33';
+$VERSION = '0.34';
 
 $VERSION = eval $VERSION; 
 
