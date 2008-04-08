@@ -1,14 +1,14 @@
 #!/usr/bin/perl
 
 use Encode;
-use lib 'lib/Net/';
-use UCP;
+use Net::UCP;
 
-$login = "login";
+$login    = "login";
 $password = "password";
 
 #INIT
 $emi = Net::UCP->new(
+		     FAKE        => 1,
 #		     SMSC_HOST   => 'ucp.example.com',
 #		     SMSC_PORT   => 5555,
 #		     SRC_HOST   => '10.0.10.1',
@@ -27,8 +27,11 @@ $ucp_string = $emi->make_message(
 				 );
 
 if ( defined($ucp_string) ) {
+    print "Login UCP String : $ucp_string\n";
+
     ($acknowledge, $error_number, $error_text) = $emi->transmit_msg( $ucp_string, 5, 1 );
     print $error_text ."\n";
+
 } else {
     die "Error while making UCP String OP 60\n";
 }

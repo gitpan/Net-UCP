@@ -1,8 +1,8 @@
 #########################################################################
-# - Net::UCP 0.32 - 
+# - Net::UCP 0.33 - 
 # 
-# Version : 0.32
-# Date    : 28/03/2008
+# Version : 0.33
+# Date    : 08/04/2008
 #
 # Library based on EMI - UCP INTERFACE Specification 
 # Version 3.5 of December 1999 
@@ -25,6 +25,10 @@ use IO::Socket;
 use IO::Select;
 use Time::HiRes qw(setitimer ITIMER_REAL);
 
+use Net::UCP::Common qw(:all);
+use Net::UCP::IntTimeout;
+use Net::UCP::TransactionManager;
+
 require Exporter;
 
 use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
@@ -33,16 +37,15 @@ use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
 @EXPORT = qw();
 @EXPORT_OK = ();
 
-$VERSION = '0.32';
+$VERSION = '0.33';
 
 $VERSION = eval $VERSION; 
 
-use constant ACK=>'A';
-use constant TRUE=>1;
+use constant TRUE => 1;
 
-BEGIN{*logout=*close_link;}
+BEGIN { *logout = *close_link; }
 
-sub new {bless({},shift())->_init(@_);}
+sub new { bless({}, shift())->_init(@_); }
 
 # login to SMSC
 sub login {
@@ -140,11 +143,11 @@ sub send_sms {
     my $timeout;
 
     if(defined($args{TIMEOUT})) {
-        my$tv=TimeoutValue->new(TIMEOUT=>$args{TIMEOUT});
-        $timeout=$tv->timeout();
+        my $tv   = Net::UCP::IntTimeout->new( TIMEOUT => $args{TIMEOUT} );
+        $timeout = $tv->timeout();
     }
     else {
-        $timeout=$self->{TIMEOUT_OBJ}->timeout();
+        $timeout = $self->{TIMEOUT_OBJ}->timeout();
     }
 
     defined($args{RECIPIENT})&&length($args{RECIPIENT})||do {
@@ -357,28 +360,35 @@ sub make_xser {
 }
 
 sub _init {
-    my$self=shift();
-    $self->{OBJ_EMI_COMMON}=Common->new();
-    my %args =(
-	       FAKE        => 0, 
-	       SMSC_HOST   => '',
-	       SMSC_PORT   => $self->{OBJ_EMI_COMMON}->DEF_SMSC_PORT,
-	       SENDER_TEXT => '',
-	       WARN        => 0,
-	       TIMEOUT     => undef,
-	       SRC_HOST    => undef,
-	       SRC_PORT    => undef,
-	       @_);
+    my $self = shift();
+    $self->{OBJ_EMI_COMMON} = new Net::UCP::Common;
 
-    $self->{TRN_OBJ}=TranNbr->new();
+    if (!defined ($self->{OBJ_EMI_COMMON})) {
+	die "Unable to create ucp common stuff object";
+    }
+    
+    my %args = (
+		FAKE        => 0, 
+		SMSC_HOST   => '',
+		SMSC_PORT   => $self->{OBJ_EMI_COMMON}->DEF_SMSC_PORT,
+		SENDER_TEXT => '',
+		WARN        => 0,
+		TIMEOUT     => undef,
+		SRC_HOST    => undef,
+		SRC_PORT    => undef,
+		@_);
+    
+    $self->{TRN_OBJ} = new Net::UCP::TransactionManager;
 
     if ($args{FAKE} == 0) {
 
-	$self->{WARN}=defined($args{WARN})?$args{WARN}?1:0:0;
-	$self->{TIMEOUT_OBJ}=TimeoutValue->new(TIMEOUT=>$args{TIMEOUT},
-                                           WARN=>$self->{WARN});
+	$self->{WARN} = defined($args{WARN}) ? $args{WARN} ? 1 : 0 : 0;
+	$self->{TIMEOUT_OBJ} = Net::UCP::IntTimeout->new( 
+							  TIMEOUT => $args{TIMEOUT},
+							  WARN    => $self->{WARN},
+							  );
 	
-	defined($args{SMSC_HOST})&&length($args{SMSC_HOST})||do{
+	defined($args{SMSC_HOST}) && length($args{SMSC_HOST}) || do{
 	    $self->{WARN}&&warn("Mandatory entity 'SMSC_HOST' was missing when creating an object of class ".
 				__PACKAGE__.
 				". Object not created");
@@ -559,7 +569,7 @@ sub parse_01 {
 	$mess{amsg} = $mess{mt} == 3 ? $self->{OBJ_EMI_COMMON}->ia5_decode($ucp[8]) : '';
 	$mess{checksum} = $ucp[9];
     } else {
-	if ($ucp[4] eq ACK) {
+	if ($ucp[4] eq $self->{OBJ_EMI_COMMON}->ACK) {
 	    $mess{ack} = $ucp[4];
 	    $mess{sm} = $ucp[5];
 	    $mess{checksum} = $ucp[6];
@@ -697,7 +707,7 @@ sub parse_02 {
 	$mess{amsg} = $mess{mt} == 3 ? $self->{OBJ_EMI_COMMON}->ia5_decode($ucp[9]) : '';
 	$mess{checksum} = $ucp[10];
     } else {
-	if ($ucp[4] eq ACK) {
+	if ($ucp[4] eq $self->{OBJ_EMI_COMMON}->ACK) {
 	    $mess{ack} = $ucp[4];
 	    $mess{sm} = $ucp[5];
 	    $mess{checksum} = $ucp[6];
@@ -849,7 +859,7 @@ sub parse_03 {
 	$mess{amsg} = $mess{mt} == 3 ? $self->{OBJ_EMI_COMMON}->ia5_decode($ucp[19]) : '';
 	$mess{checksum} = $ucp[20];
     } else {
-	if ($ucp[4] eq ACK) {
+	if ($ucp[4] eq $self->{OBJ_EMI_COMMON}->ACK) {
 	    $mess{ack} = $ucp[4];
 	    $mess{sm} = $ucp[5];
 	    $mess{checksum} = $ucp[6];
@@ -1014,7 +1024,7 @@ sub parse_30 {
 	$mess{amsg} = $self->{OBJ_EMI_COMMON}->ia5_decode($ucp[13]);
 	$mess{checksum} = $ucp[14];
     } else {
-	if ($ucp[4] eq ACK) {
+	if ($ucp[4] eq $self->{OBJ_EMI_COMMON}->ACK) {
 	    $mess{ack} = $ucp[4];
 	    $mess{mvp} = $ucp[5];
 	    $mess{sm} = $ucp[6];
@@ -1160,7 +1170,7 @@ sub parse_31 {
 	$mess{pid} = $ucp[5];
 	$mess{checksum} = $ucp[6];
     } else {
-	if ($ucp[4] eq ACK) {
+	if ($ucp[4] eq $self->{OBJ_EMI_COMMON}->ACK) {
 	    $mess{ack} = $ucp[4];
 	    $mess{sm} = $ucp[5];
 	    $mess{checksum} = $ucp[6];
@@ -1318,7 +1328,7 @@ sub _parse_5x {
 	$mess{res5} = $ucp[36];
 	$mess{checksum} = $ucp[37];
     } else {
-	if ($ucp[4] eq ACK) {
+	if ($ucp[4] eq $self->{OBJ_EMI_COMMON}->ACK) {
 	    $mess{ack} = $ucp[4];
 	    $mess{mvp} = $ucp[5];
 	    $mess{sm} = $ucp[6];
@@ -1624,7 +1634,7 @@ sub parse_60 {
 	$mess{res1} = $ucp[15];
 	$mess{checksum} = $ucp[16];
     } else {
-	if ($ucp[4] eq ACK) {
+	if ($ucp[4] eq $self->{OBJ_EMI_COMMON}->ACK) {
 	    $mess{ack} = $ucp[4];
 	    $mess{sm} = $ucp[5];
 	    $mess{checksum} = $ucp[6];
@@ -1924,6 +1934,7 @@ sub create_fake_smsc {
 			print "-"x30;
 			print "\n";
 		    }
+		    
 		    if (exists $opt{action} and ref($opt{action}) eq "CODE") {
 			my $resp_be = $opt{action}($message);
 			print $sock $resp_be if (defined($resp_be) && ($resp_be ne ''));
@@ -1957,17 +1968,22 @@ sub create_fake_smsc {
     return;
 }
 
-#############################
 sub transmit_msg {
-    my($self,$message_string,$timeout,$need_resp)=@_;
+    my($self, $message_string, $timeout, $need_resp) = @_;
+
     my($rd,$buffer,$response,$acknack,$errcode,$errtxt,$ack);
 
-    defined($timeout)||do{$timeout=0};
+    defined($timeout) || do{ $timeout = 0 };
 
-    print {$self->{SOCK}} ($self->{OBJ_EMI_COMMON}->STX.$message_string.$self->{OBJ_EMI_COMMON}->ETX) ||do{
-        $errtxt="Failed to print to SMSC socket. Remote end closed?";
-        $self->{WARN}&&warn($errtxt);
-        return(defined(wantarray)?wantarray?(undef,0,$errtxt):undef:undef);
+    if (!defined($self->{SOCK})) {
+	die "Unable to send message : smsc socket is not initialized, maybe u are using it in FAKE mode... ";
+    }
+    my $enclosed = $self->{OBJ_EMI_COMMON}->STX . $message_string . $self->{OBJ_EMI_COMMON}->ETX;
+
+    print {$self->{SOCK}} $enclosed || do {
+        $errtxt = "Failed to print to SMSC socket. Remote end closed?";
+        $self->{WARN} && warn($errtxt);
+        return(defined(wantarray) ? wantarray?(undef,0,$errtxt) : undef : undef);
     };
     
     $self->{SOCK}->flush();
@@ -2001,202 +2017,29 @@ sub transmit_msg {
 		return(defined(wantarray)?wantarray?(undef,0,$errtxt):undef:undef);
 	    };
 	    $response.=$buffer;
-	}   until($buffer eq $self->{OBJ_EMI_COMMON}->ETX);
+	}   until($buffer eq ETX);
 
-	(undef,undef,undef,undef,$acknack,$errcode,$errtxt,undef)=split($self->{OBJ_EMI_COMMON}->UCP_DELIMITER,$response);
+	(undef,undef,undef,undef,$acknack,$errcode,$errtxt,undef)=split(UCP_DELIMITER, $response);
 	if($acknack eq ACK) {
 	    ($ack,$errcode,$errtxt)=(TRUE,0,'');
 	}
 	else {
-	    $ack=0;
-	    $errtxt=~s/^\s+//;
-	    $errtxt=~s/\s+$//;
+	    $ack    = 0;
+	    $errtxt =~ s/^\s+//;
+	    $errtxt =~ s/\s+$//;
 	}
     
 	$errtxt .= "\nSent : " . $message_string . "\nReceive : " . $response . "\n";
-	defined(wantarray)?wantarray?($ack,$errcode,$errtxt):$ack:undef;
+	defined(wantarray) ? wantarray ? ($ack, $errcode, $errtxt) : $ack : undef;
     
     } else {
-	defined(wantarray)?wantarray?(undef,undef,undef):undef:undef;
+	defined(wantarray) ? wantarray ? (undef, undef, undef) : undef : undef;
     }
 
-}
-
-package Common;
-use strict;
-
-use constant STX=>chr(2);
-use constant ETX=>chr(3);
-use constant UCP_DELIMITER=>'/';
-use constant DEF_SMSC_PORT=>3024;
-use constant ACK=>'A';
-use constant NACK=>'N';
-
-use constant DEBUG=>0;
-
-sub new {
-    my$self={};
-    bless($self,shift())->_init(@_);
-}
-
-# Calculate packet checksum
-sub checksum {
-    shift;
-    my $checksum;
-    defined($_[0])||return(0);
-    map {$checksum+=ord} (split //,pop @_);
-    sprintf("%02X",$checksum%256);
-}
-
-# Calculate data length
-sub data_len {
-    shift;
-    defined($_[0])||return(0);
-    my$len=length(pop @_)+17;
-    for(1..(5-length($len))) {
-	$len='0'.$len;
-    }
-    $len;
-}
-
-sub decode_7bit {
-    shift;
-    my ($oadc) = shift;
-    my ($msg,$bits);
-    my $cnt=0;
-    my $ud = $oadc || "";
-    my $len = length($ud);
-    $msg = "";
-    my $byte = unpack('b8', pack('H2', substr($ud, 0, 2)));
-    while (($cnt<length($ud)) && (length($msg)<$len)) {
-	$msg.= pack('b7', $byte);
-	$byte = substr($byte,7,length($byte)-7);
-	if ( (length( $byte ) < 7) ) {
-	    $cnt+=2;
-	    $byte = $byte.unpack('b8', pack('H2', substr($ud, $cnt, 2)));
-	}
-    }
-    return $msg;
-}
-
-sub encode_7bit {
-    my($self,$msg)=@_;
-    my($bit_string,$user_data)=('','');
-    my($octet,$rest);
-
-    defined($msg)&&length($msg)||return('00');   # Zero length user data.
-
-    for(split(//,$msg)) {
-	$bit_string.=unpack('b7',$_);
-    }
-
-    while(defined($bit_string)&&(length($bit_string))) {
-	$rest=$octet=substr($bit_string,0,8);
-	$user_data.=unpack("H2",pack("b8",substr($octet.'0'x7,0,8)));
-	$bit_string=(length($bit_string)>8)?substr($bit_string,8):'';
-    }
-
-    sprintf("%02X",length($rest)<5?length($user_data)-1:length($user_data)).uc($user_data);
-}
-
-sub ia5_decode {
-    my ($self,$msg)=@_;
-    my $tmp = "";
-    my $out = "";
-    
-    while (length($msg)) {
-	($tmp,$msg) = ($msg =~ /(..)(.*)/);
-	$out .= sprintf("%s", chr(hex($tmp)));
-    }
-    
-    return ($out);
-}
-
-sub ia5_encode { shift; join('',map {sprintf "%02X", ord} split(//,pop(@_))); }
-
-sub _init { shift; }
-
-#Pack.
-######################
-package TimeoutValue;
-use strict;
-use Carp;
-
-use constant MIN_TIMEOUT=>0;           # No timeout at all!
-use constant DEFAULT_TIMEOUT=>15;
-use constant MAX_TIMEOUT=>60;
-
-sub new {bless({},shift())->_init(@_);}
-
-sub timeout {$_[0]->{TIMEOUT};}
-
-sub _init {
-    my$self=shift();
-   my%args=(
-      TIMEOUT=>undef,
-      WARN=>0,
-	    @_);
-
-    $self->{WARN}=defined($args{WARN})?$args{WARN}?1:0:0;
-    $self->{TIMEOUT}=DEFAULT_TIMEOUT;
-
-    if(defined($args{TIMEOUT})) {
-	if($args{TIMEOUT}=~/\D/) {
-	    $self->{WARN}&&warn("Non-numerical data found in entity 'TIMEOUT' when creating an object of class ".
-                             __PACKAGE__.
-                             '. '.
-                             'Input data: >'.
-				$args{TIMEOUT}.
-				'< Given TIMEOUT value ignored and default value '.DEFAULT_TIMEOUT.' used instead');
-	}
-
-# The commented code will never be executed until we let the MIN_TIMEOUT be greater than zero (since the '-' is non-numeri)
-#      elsif($args{TIMEOUT}<MIN_TIMEOUT) {
-#         $self->{WARN}&&warn("Entity 'TIMEOUT' contains a value smaller than the smallest value allowed (".
-#                             MIN_TIMEOUT.
-#                             ") when creating an object of class ".
-#                             __PACKAGE__.
-#                             '. Given TIMEOUT value ignored and default value '.DEFAULT_TIMEOUT.' used instead');
-	elsif($args{TIMEOUT}>MAX_TIMEOUT) {
-	    $self->{WARN}&&warn("Entity 'TIMEOUT' contains a value greater than the largest value allowed (".
-                             MAX_TIMEOUT.
-                             ") when creating an object of class ".
-                             __PACKAGE__.
-				'. Given TIMEOUT value ignored and default value '.DEFAULT_TIMEOUT.' used instead');
-	}
-	else {
-	    $self->{TIMEOUT}=$args{TIMEOUT};
-	}
-    }
-
-    $self;
-}
-
-
-#Pack.
-##################
-package TranNbr;
-use strict;
-use constant HIGHEST_NBR=>99;
-
-sub new {bless({},shift())->_init(@_);}
-
-sub next_trn {
-    my$self=shift;
-    ($self->{TRN}>HIGHEST_NBR)&&do{$self->{TRN}=0};
-    $self->{TRN}++;
-}
-
-sub reset_trn {
-    $_[0]->{TRN}=0;
-}
-
-sub _init {
-    $_[0]->reset_trn();
-    $_[0];
 }
 
 1;
+
 __END__
 
 =head1 NAME

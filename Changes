@@ -111,3 +111,6 @@ Revision history for Perl extension Net::UCP.
 	- 1 bug fix
 	-- rt.cpan.org ticket id 34495
 	Thanks to Christopherus Goo
+
+0.33 Tue Apr  8 13:12:46 CEST 2008
+	- refactoring
