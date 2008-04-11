@@ -5,7 +5,7 @@ use ExtUtils::AutoInstall(
 				      'IO::Select'   => '0.00', 
 				      'Time::HiRes'  => '0.00',
 				      'Net::UCP::Common'             => '0.02',
-				      'Net::UCP::IntTimeout'         => '0.03',
+				      'Net::UCP::IntTimeout'         => '0.05',
 				      'Net::UCP::TransactionManager' => '0.02',]
 			  );
 WriteMakefile(
