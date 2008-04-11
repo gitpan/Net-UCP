@@ -117,3 +117,6 @@ Revision history for Perl extension Net::UCP.
 
 0.34 Tue Apr 8 23:38:50 CEST 2008
 	- AutoInstall fix
+
+0.35 Thu Apr 10 16:47:38 CEST 2008
+	- Cpan tester bug 

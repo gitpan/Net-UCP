@@ -1,8 +1,8 @@
 #########################################################################
-# - Net::UCP 0.34 - 
+# - Net::UCP 0.35 - 
 # 
-# Version : 0.34
-# Date    : 08/04/2008
+# Version : 0.35
+# Date    : 11/04/2008
 #
 # Library based on EMI - UCP INTERFACE Specification 
 # Version 3.5 of December 1999 
@@ -37,7 +37,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
 @EXPORT = qw();
 @EXPORT_OK = ();
 
-$VERSION = '0.34';
+$VERSION = '0.35';
 
 $VERSION = eval $VERSION; 
 
@@ -49,16 +49,16 @@ sub new { bless({}, shift())->_init(@_); }
 
 # login to SMSC
 sub login {
-    my$self=shift();
-    my %args=(
-	      SMSC_ID    => '',
-	      SMSC_PW    => '',
-	      SHORT_CODE => undef,
-	      ONPI       => '',
-	      OTON       => '',
-	      STYP       => 1,       #def 1 (open session)
-	      VERS       => '0100',  #def 0100
-	      @_);
+    my $self = shift();
+    my %args = (
+		SMSC_ID    => '',
+		SMSC_PW    => '',
+		SHORT_CODE => undef,
+		ONPI       => '',
+		OTON       => '',
+		STYP       => 1,       #def 1 (open session)
+		VERS       => '0100',  #def 0100
+		@_);
 
     # Conditionally open the socket unless already opened.
     $self->open_link() unless(defined($self->{SOCK}));
@@ -97,15 +97,15 @@ sub login {
 
 # This method will also conditionally be called from the login() method.
 sub open_link {
-    my$self=shift;
+    my $self = shift;
     
-    $self->{SOCK}=IO::Socket::INET->new(
-                                        PeerAddr  => $self->{SMSC_HOST},
-                                        PeerPort  => $self->{SMSC_PORT},
-                                        Proto     => 'tcp',
-                                        LocalAddr => defined($self->{SRC_HOST}) ? $self->{SRC_HOST} : undef,
-                                        LocalPort => defined($self->{SRC_PORT}) ? $self->{SRC_PORT} : undef
-					);
+    $self->{SOCK} = IO::Socket::INET->new(
+					  PeerAddr  => $self->{SMSC_HOST},
+					  PeerPort  => $self->{SMSC_PORT},
+					  Proto     => 'tcp',
+					  LocalAddr => defined($self->{SRC_HOST}) ? $self->{SRC_HOST} : undef,
+					  LocalPort => defined($self->{SRC_PORT}) ? $self->{SRC_PORT} : undef
+					  );
 
     defined($self->{SOCK})||do {
 	$self->{WARN}&&warn("Failed to establish a socket connection with host $self->{SMSC_HOST} on port $self->{SMSC_PORT} : $!");
@@ -117,10 +117,10 @@ sub open_link {
 
 # To avoid keeping the socket open if not used any more.
 sub close_link {
-    my$self=shift;
+    my $self = shift;
 
     defined($self->{SOCK})||return;
-
+    
     close($self->{SOCK});
     $self->{SOCK}=undef;
     $self->{TRN_OBJ}->reset_trn();
@@ -129,16 +129,16 @@ sub close_link {
 
 # send SMS
 sub send_sms {
-    my$self=shift();
-    my%args=(
-             RECIPIENT      => '',
-             MESSAGE_TEXT   => '',
-             SENDER_TEXT    => '',
-             UDH            => '',
-             MESSAGE_BINARY => undef,
-	     FLASH          => undef,
-             TIMEOUT        => undef,
-             @_);
+    my $self = shift();
+    my %args = (
+		RECIPIENT      => '',
+		MESSAGE_TEXT   => '',
+		SENDER_TEXT    => '',
+		UDH            => '',
+		MESSAGE_BINARY => undef,
+		FLASH          => undef,
+		TIMEOUT        => undef,
+		@_);
 
     my $timeout;
 
@@ -360,9 +360,14 @@ sub make_xser {
 }
 
 sub _init {
-    my $self = shift();
-    $self->{OBJ_EMI_COMMON} = new Net::UCP::Common;
+    my $self = shift;
 
+    $self->{OBJ_EMI_COMMON} = new Net::UCP::Common;
+    $self->{TRN_OBJ}        = new Net::UCP::TransactionManager;
+    $self->{TIMEOUT_OBJ}    = new Net::UCP::IntTimeout; 
+    
+    return $self if @_ == 0;
+    
     if (!defined ($self->{OBJ_EMI_COMMON})) {
 	die "Unable to create ucp common stuff object";
     }
@@ -377,18 +382,13 @@ sub _init {
 		SRC_HOST    => undef,
 		SRC_PORT    => undef,
 		@_);
-    
-    $self->{TRN_OBJ} = new Net::UCP::TransactionManager;
 
     if ($args{FAKE} == 0) {
 
 	$self->{WARN} = defined($args{WARN}) ? $args{WARN} ? 1 : 0 : 0;
-	$self->{TIMEOUT_OBJ} = Net::UCP::IntTimeout->new( 
-							  TIMEOUT => $args{TIMEOUT},
-							  WARN    => $self->{WARN},
-							  );
+	$self->{TIMEOUT_OBJ}->set($args{TIMEOUT});
 	
-	defined($args{SMSC_HOST}) && length($args{SMSC_HOST}) || do{
+	defined($args{SMSC_HOST}) && length($args{SMSC_HOST}) || do {
 	    $self->{WARN}&&warn("Mandatory entity 'SMSC_HOST' was missing when creating an object of class ".
 				__PACKAGE__.
 				". Object not created");
@@ -407,14 +407,14 @@ sub _init {
 	    return;       # Failed to instantiate this object.
 	};
 	
-	$self->{SMSC_HOST}=$args{SMSC_HOST};
-	$self->{SMSC_PORT}=$args{SMSC_PORT};
-	$self->{SENDER_TEXT}=defined($args{SENDER_TEXT})&&length($args{SENDER_TEXT})?$args{SENDER_TEXT}:__PACKAGE__;
+	$self->{SMSC_HOST}   = $args{SMSC_HOST};
+	$self->{SMSC_PORT}   = $args{SMSC_PORT};
+	$self->{SENDER_TEXT} = defined($args{SENDER_TEXT})&&length($args{SENDER_TEXT})?$args{SENDER_TEXT}:__PACKAGE__;
 	
-	$self->{SRC_HOST}=$args{SRC_HOST};
-	$self->{SRC_PORT}=$args{SRC_PORT};
+	$self->{SRC_HOST} = $args{SRC_HOST};
+	$self->{SRC_PORT} = $args{SRC_PORT};
 	
-	$self->{SOCK}=undef;
+	$self->{SOCK} = undef;
 	
 	# Some systems have not implemented alarm().
 	# On such systems, calling alarm() will create a run-time error.
@@ -423,7 +423,7 @@ sub _init {
 	#I must work on it...
 	
 	eval{alarm(0)};
-	$self->{CAN_ALARM}=$@?0:1;
+	$self->{CAN_ALARM} = $@ ? 0 : 1;
     }
 
     $self;
@@ -2419,99 +2419,14 @@ returns nothing (void)
 
 =head1 RAW MODE
 
-=head2 Methods
+=head2 How to use it in "RAW MODE" 
 
-=item clear_ucp_message() [ DEPRECATED ]
-
-this method remove STX and ETX characters from string received in input and return nothing. 
-
-=item EXAMPLE 
-    
-    $emi_obj->clear_ucp_message(\$ucp_message);
-
-=item remove_ucp_enclosure()
-
-this method REMOVE STX and ETX characters from string received in input and return nothing. 
-
-=item EXAMPLE 
-    
-    $emi_obj->remove_ucp_enclosure(\$ucp_message);
-
-=item add_ucp_enclosure()
-
-this method ADD STX and ETX characters to string received in input and return nothing. 
-
-=item EXAMPLE 
-    
-    $emi_obj->add_ucp_enclosure(\$ucp_message);
-
-=item wait_in_loop() 
-
-It needs three parameters (timeout, action, clear) clear is a boolean value, when clear is equal "1",
-method removes characters STX and ETX from all messages received.
-
-With wait_in_loop() method you are able to get back 
-every messages from SMSC.
-
-First parameter is timeout in second.
-Second parameter is a ref to a subroutine. This subroutine will be call when timeout will be caught up. 
-
-Second patameter is mandatory and it has no sense if timeout is undefined or less or equal 0. 
-If it isn't set up, wait_in_loop will die leaving a message on standard output when timeout will be caught up. 
-
-it will get back a scalar value with a message string or undef value.
-
-=item EXAMPLE
-
-    my $message;
-
-    sub make_something {
-	print "Timeout reached...";
-	exit 0;
-    }
-
-    $message = $emi->wait_in_loop(
-		                  timeout => 30,
-		                  action => \&make_something
-		                 );
-
-    if (defined($message)) {
-        print "I Get Back From SMSC ... " . $message . "\n";
-    } else {
-        print "No Message from SMSC\n";
-    }
-
-without timeout, it waits "in loop" until something get back.
-
-    $message = $emi->wait_in_loop();
-
-with clear equal 1 it removes STX and ETX characters.
-
-    $message = $emi->wait_in_loop(clear => 1);
-
-=item transmit_msg()
-
-with this method you are able to transmit messages to the SMSC directly, it will get back SMSC
-response if you need it.
-
-Parameters are 3 : ucp message, timeout in second, boolean value as flag for response.
-
-Retrun value are 3 (in array context) = ack, error_code, error_text. 
-If you don't need response these 3 values will be undef.
-In a void context, get beck only ack or nack, or undef on transmission problem. 
-
-You don't need response in some cases, 
-
-    1) you are sending a RESPONSE (Operation "R")
-    2) [for example] you are receving messages from SMSC through a child uses wait_in_loop 
-       (it could be an idea)
-    
-=item EXAMPLE 
-
-    $timeout = 10; #ten seconds timeout
-    $i_need_response = 1;
+ You can use Net::UCP in "raw mode" and it means you can bypass wrapper method like send_sms or login and other stuff 
+ like that. You can manage your UCP string calling method make_message() and parse_message() (see below).
  
-    ($ack, $error_code, $error_text) = $ucp->transmit_msg($ucp_message, $timeout, $i_need_response);
+ For example : to authenticate your client you will be able to create your ucp 60 string calling make_message( op => 60 ... ) 
+ and send it to smsc using transmit_msg() method. When SMSC will get back to you with an ucp response you will parse it 
+ calling parse_message() which gets back a reference to an HASH with ucp protocol fields as keys and their contents as keys values. 
 
 =head2 Parsing Message in Raw Mode
 
@@ -2690,7 +2605,91 @@ another example.. op 02
 				amsg => 'Short Message to 3 subscribers'
 				);
 
+=head2 Other Methods
 
+=item remove_ucp_enclosure()
+
+this method REMOVE STX and ETX characters from string received in input and return nothing. 
+
+=item EXAMPLE 
+    
+    $emi_obj->remove_ucp_enclosure(\$ucp_message);
+
+=item add_ucp_enclosure()
+
+this method ADD STX and ETX characters to string received in input and return nothing. 
+
+=item EXAMPLE 
+    
+    $emi_obj->add_ucp_enclosure(\$ucp_message);
+
+=item wait_in_loop() 
+
+It needs three parameters (timeout, action, clear) clear is a boolean value, when clear is equal "1",
+method removes characters STX and ETX from all messages received.
+
+With wait_in_loop() method you are able to get back 
+every messages from SMSC.
+
+First parameter is timeout in second.
+Second parameter is a ref to a subroutine. This subroutine will be call when timeout will be caught up. 
+
+Second patameter is mandatory and it has no sense if timeout is undefined or less or equal 0. 
+If it isn't set up, wait_in_loop will die leaving a message on standard output when timeout will be caught up. 
+
+it will get back a scalar value with a message string or undef value.
+
+=item EXAMPLE
+
+    my $message;
+
+    sub make_something {
+	print "Timeout reached...";
+	exit 0;
+    }
+
+    $message = $emi->wait_in_loop(
+		                  timeout => 30,
+		                  action => \&make_something
+		                 );
+
+    if (defined($message)) {
+        print "I Get Back From SMSC ... " . $message . "\n";
+    } else {
+        print "No Message from SMSC\n";
+    }
+
+without timeout, it waits "in loop" until something get back.
+
+    $message = $emi->wait_in_loop();
+
+with clear equal 1 it removes STX and ETX characters.
+
+    $message = $emi->wait_in_loop(clear => 1);
+
+=item transmit_msg()
+
+with this method you are able to transmit messages to the SMSC directly, it will get back SMSC
+response if you need it.
+
+Parameters are 3 : ucp message, timeout in second, boolean value as flag for response.
+
+Retrun value are 3 (in array context) = ack, error_code, error_text. 
+If you don't need response these 3 values will be undef.
+In a void context, get beck only ack or nack, or undef on transmission problem. 
+
+You don't need response in some cases, 
+
+    1) you are sending a RESPONSE (Operation "R")
+    2) [for example] you are receving messages from SMSC through a child uses wait_in_loop 
+       (it could be an idea)
+    
+=item EXAMPLE 
+
+    $timeout = 10; #ten seconds timeout
+    $i_need_response = 1;
+ 
+    ($ack, $error_code, $error_text) = $ucp->transmit_msg($ucp_message, $timeout, $i_need_response);
 
 =head1 SMSCfAKE 
 
@@ -2818,12 +2817,7 @@ the easiest way to make this conversion is to use Encode module and its encode m
 
 =head1 SEE ALSO
 
-C<IO::Socket>, Encode, ucp.pl
-
-=head1 TODO
-
-A good unit test
-Clear and better documentation
+C<IO::Socket>, C<IO::Select>, C<Encode>, C<Net::UCP::Common>, C<Net::UCP::IntTimeout>, C<Net::UCP::TransactionManager>
 
 =head1 AUTHOR
 
@@ -2840,7 +2834,7 @@ Copyright (C) 2004-2008 by Marco Romano
 =cut
 
 sub AUTOLOAD {
-    my($method,$class);
+    my($method, $class);
 
     $method = $AUTOLOAD;
     $method =~ s/.*:://;
