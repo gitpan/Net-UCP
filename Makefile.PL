@@ -11,6 +11,11 @@ use ExtUtils::AutoInstall(
 WriteMakefile(
 	      NAME              => 'Net::UCP',
 	      VERSION_FROM      => 'lib/Net/UCP.pm', 
+	      PREREQ_PM          => { 
+		    Net::UCP::Common             => 0.02,
+		    Net::UCP::IntTimeout         => 0.05,
+		    Net::UCP::TransactionManager => 0.02
+		},
 	      ($] >= 5.006 ?     
 	       (ABSTRACT_FROM  => 'lib/Net/UCP.pm', 
 		AUTHOR         => 'Marco Romano <nemux@cpan.org>') : ()),
