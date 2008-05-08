@@ -11,7 +11,7 @@ BEGIN { plan tests => 5 };
 use Net::UCP;
 ok(1);
 
-$ucp = Net::UCP->new(FAKE => 1);
+$ucp = Net::UCP->new();
 #$ucp->create_fake_smsc(); 
 
 ok (2, 	sub { $ucp_string = $ucp->make_01(

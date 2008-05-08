@@ -1,11 +1,11 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         Net-UCP
-version:      0.37
+version:      0.38
 version_from: lib/Net/UCP.pm
 installdirs:  site
 requires:
-    Net::UCP::Common:              0.02
+    Net::UCP::Common:              0.05
     Net::UCP::IntTimeout:          0.05
     Net::UCP::TransactionManager:  0.02
 
