@@ -1,15 +1,15 @@
 #########################################################################
-# - Net::UCP 0.38 - 
+# - Net::UCP 0.39 - 
 # 
-# Version : 0.38
-# Date    : 08/05/2008
+# Version : 0.39
+# Date    : 29/11/2008
 #
 # Library based on EMI - UCP INTERFACE Specification 
 # Version 3.5 of December 1999 
 # Spcification Copyright (C) CMG telecommunication & Utilities BV Division 
 # Advanced Technology
 # 
-# Library Copyright (C) 2004-2008 Marco Romano <nemux@cpan.org>
+# Library Copyright (C) 2004-2009 Marco Romano <nemux@cpan.org>
 #
 # This library is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself, either Perl version 5.8.4 or,
@@ -37,7 +37,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
 @EXPORT = qw();
 @EXPORT_OK = ();
 
-$VERSION = '0.38';
+$VERSION = '0.39';
 
 $VERSION = eval $VERSION; 
 
@@ -88,7 +88,7 @@ sub login {
 					     );
 					 
     if ( defined $message_string ) { 
-	my $timeout = $self->{TIMEOUT_OBJ}->timeout();        
+	my $timeout = $self->{TIMEOUT_OBJ}->get();        
 	$self->transmit_msg($message_string, $timeout, 1);
     } else {
 	return(defined(wantarray)?wantarray?(undef,0,''):undef:undef);
@@ -144,10 +144,10 @@ sub send_sms {
 
     if(defined($args{TIMEOUT})) {
         my $tv   = Net::UCP::IntTimeout->new( TIMEOUT => $args{TIMEOUT} );
-        $timeout = $tv->timeout();
+        $timeout = $tv->get();
     }
     else {
-        $timeout = $self->{TIMEOUT_OBJ}->timeout();
+        $timeout = $self->{TIMEOUT_OBJ}->get();
     }
 
     defined($args{RECIPIENT})&&length($args{RECIPIENT})||do {

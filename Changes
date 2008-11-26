@@ -123,3 +123,6 @@ Revision history for Perl extension Net::UCP.
 
 0.38 Thu May  8 17:10:25 CEST 2008
 	- Cpan Tester bug 
+
+0.39 Sat Nov 29 13:01:16 CET 2008
+	- Fixed timeout bug
