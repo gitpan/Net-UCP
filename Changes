@@ -126,3 +126,6 @@ Revision history for Perl extension Net::UCP.
 
 0.39 Sat Nov 29 13:01:16 CET 2008
 	- Fixed timeout bug
+
+0.40 Fri May 29 15:17:12 CET 2009
+	- Patch from Slaven Rezic

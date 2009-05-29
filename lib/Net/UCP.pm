@@ -1,8 +1,8 @@
 #########################################################################
-# - Net::UCP 0.39 - 
+# - Net::UCP 0.40 - 
 # 
-# Version : 0.39
-# Date    : 29/11/2008
+# Version : 0.40
+# Date    : 29/05/2009
 #
 # Library based on EMI - UCP INTERFACE Specification 
 # Version 3.5 of December 1999 
@@ -37,7 +37,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
 @EXPORT = qw();
 @EXPORT_OK = ();
 
-$VERSION = '0.39';
+$VERSION = '0.40';
 
 $VERSION = eval $VERSION; 
 
@@ -514,23 +514,12 @@ sub parse_message {
     my ($self, $resp) = @_;
  
     my $ref_mess = undef;
-
-    if ($resp =~ m/^\d{2}\/\d{5}\/.*\/01\/.*/) { $ref_mess = $self->parse_01($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/02\/.*/) { $ref_mess = $self->parse_02($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/03\/.*/) { $ref_mess = $self->parse_03($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/30\/.*/) { $ref_mess = $self->parse_30($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/31\/.*/) { $ref_mess = $self->parse_31($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/51\/.*/) { $ref_mess = $self->parse_51($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/52\/.*/) { $ref_mess = $self->parse_52($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/53\/.*/) { $ref_mess = $self->parse_53($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/54\/.*/) { $ref_mess = $self->parse_54($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/55\/.*/) { $ref_mess = $self->parse_55($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/56\/.*/) { $ref_mess = $self->parse_56($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/57\/.*/) { $ref_mess = $self->parse_57($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/58\/.*/) { $ref_mess = $self->parse_58($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/60\/.*/) { $ref_mess = $self->parse_60($resp) }
-    elsif ($resp =~ m/^\d{2}\/\d{5}\/.*\/61\/.*/) { $ref_mess = $self->parse_61($resp) }
-
+    
+    if (my($optype) = $resp =~ m{^\d{2}/\d{5}/.*?/(01|02|03|30|51|52|53|54|55|56|57|58|60|61)/.*}) {
+	my $parse_method = "parse_$optype";
+	$ref_mess = $self->$parse_method($resp);
+    }
+    
     return $ref_mess;
 }
 
@@ -2407,6 +2396,8 @@ a new call to either open_link() or to login() will try to re-establish the comm
 
 returns nothing (void)
 
+=back
+
 =head1 RAW MODE
 
 =head2 How to use it in "RAW MODE" 
@@ -2431,6 +2422,8 @@ or undef on error. (it's a wrapper of parse_* functions reported below)
 Every hash reference get back from parse_message contains "my_checksum" key, its value is checksum 
 recalculated from module, you can use this value to check checksum get back from ucp client. 
 
+=over 1
+
 =item EXAMPLE 
 
      use Data::Dumper;
@@ -2446,6 +2439,8 @@ recalculated from module, you can use this value to check checksum get back from
      print Dumper($ref_msg);
 
 =head2 Making Message in Raw Mode
+
+=over 2
 
 =item make_message()
 
@@ -2545,6 +2540,8 @@ For all operations exist a method make_[OP_NN]
 every functions return a scalar value with message string or undef on error. 
 For every function is possible to set as parameters in input the same name of operation's parameters.
 
+=over 1
+
 =item EXAMPLE 
 
 #make operation
@@ -2596,6 +2593,8 @@ another example.. op 02
 				);
 
 =head2 Other Methods
+
+=over 8
 
 =item remove_ucp_enclosure()
 
@@ -2681,6 +2680,8 @@ You don't need response in some cases,
  
     ($ack, $error_code, $error_text) = $ucp->transmit_msg($ucp_message, $timeout, $i_need_response);
 
+=back
+
 =head1 SMSCfAKE 
 
 =head2 Description 
@@ -2713,6 +2714,8 @@ Example :
 =head2 How-to create a simple Fake SMSC
 
 Is possible to create a simple Fake SMSC through method reported below. 
+
+=over 2
 
 =item create_smsc_fake()
 
@@ -2764,12 +2767,15 @@ It accepts 8 optional parameters :  host, port, listen, output, action, sending,
 			  sending      => \&delivery_notification_call_back
 			  );
 
+=back
    
 =head1 DATA CODING
 
 SMSC default alphabet is GSM 03.38 ( ftp://ftp.unicode.org/Public/MAPPINGS/ETSI/GSM0338.TXT )
 
 the easiest way to make this conversion is to use Encode module and its encode method
+
+=over 1
 
 =item Encoding Example 
 
