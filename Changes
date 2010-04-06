@@ -129,3 +129,6 @@ Revision history for Perl extension Net::UCP.
 
 0.40 Fri May 29 15:17:12 CET 2009
 	- Patch from Slaven Rezic
+
+0.41 Thu Mar 06 11:00:00 CET 2010
+	- Fix multi sms and uninitialized value message

@@ -1,8 +1,8 @@
 #########################################################################
-# - Net::UCP 0.40 - 
+# - Net::UCP 0.41 - 
 # 
-# Version : 0.40
-# Date    : 29/05/2009
+# Version : 0.41
+# Date    : 06/04/2010
 #
 # Library based on EMI - UCP INTERFACE Specification 
 # Version 3.5 of December 1999 
@@ -37,7 +37,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
 @EXPORT = qw();
 @EXPORT_OK = ();
 
-$VERSION = '0.40';
+$VERSION = '0.41';
 
 $VERSION = eval $VERSION; 
 
@@ -50,6 +50,7 @@ sub new { bless({}, shift())->_init(@_); }
 # login to SMSC
 sub login {
     my $self = shift();
+	    
     my %args = (
 		SMSC_ID    => '',
 		SMSC_PW    => '',
@@ -208,9 +209,7 @@ sub send_sms {
 
 sub send_sms_multipart {
     my $self = shift;
-    
-    my %argsLong =(
-		   RECIPIENT      => '',
+    my %argsLong =(RECIPIENT      => '',
 		   MESSAGE_TEXT   => '',
 		   SENDER_TEXT    => '',
 		   UDH            => undef,
@@ -219,45 +218,20 @@ sub send_sms_multipart {
 		   TIMEOUT        => undef,
 		   @_);
 
-    my $chunkBlock = 134;                
     my $messageId  = random_int(1,255);  
-    
     my $multiHash;
-    
-    my $txtTmp    = $argsLong{MESSAGE_TEXT};
     my $countPart = 0;
-    my $chunk;
     
-    while (length($txtTmp) != 0) {
-	
-        if (length($txtTmp) > 134) {
-            $txtTmp =~ s/((.){134})//;
-            $chunk = $1;
-        } else {
-            $chunk  = $txtTmp;
-            $txtTmp = '';
-        }
-	
+    foreach my $chunk ($argsLong{MESSAGE_TEXT}=~m/(.{1,134})/sg){
         $multiHash->{++$countPart} = $chunk;
-	
     }
-    
-    my $textChunk = '';
-    my $k        = '';
-    my $udhChunk = '';
-    my $ret;
-
-    while (($k, $textChunk) = each %{$multiHash}) {
-        $udhChunk = "0106050003" 
-	    . sprintf("%02X", $messageId)
-            . sprintf("%02X", $countPart)
-            . sprintf("%02X", $k);
-	
-        $ret = $self->send_sms(
+    while (my ($k, $textChunk) = each %{$multiHash}) {
+        my $udh=sprintf('%s%02X%02X%02X',"0106050003",$messageId,$countPart,$k);
+        my $ret = $self->send_sms(
 			       RECIPIENT      => $argsLong{RECIPIENT},
 			       MESSAGE_TEXT   => $textChunk,
 			       SENDER_TEXT    => $argsLong{SENDER_TEXT},
-			       UDH            => $udhChunk,
+			       UDH            => $udh
 			       );
     
 	return $ret if (!$ret || !defined($ret)); #it could be better
@@ -409,6 +383,8 @@ sub _init {
 	
 	$self->{SRC_HOST} = $args{SRC_HOST};
 	$self->{SRC_PORT} = $args{SRC_PORT};
+        # itguru fix
+	$self->{SHORT_CODE} = defined($args{SHORT_CODE})&&length($args{SHORT_CODE})?$args{SHORT_CODE}:undef;
 	
 	$self->{SOCK} = undef;
 	
@@ -1346,7 +1322,7 @@ sub _make_5x {
 	    ? $self->{OBJ_EMI_COMMON}->encode_7bit($arg->{oadc}) 
 	    : $arg->{oadc} 
 	if exists $arg->{otoa} ;
-	    
+
 	my $string = 
 	    (exists $arg->{adc} ? $arg->{adc} : '') .
 	    UCP_DELIMITER .
