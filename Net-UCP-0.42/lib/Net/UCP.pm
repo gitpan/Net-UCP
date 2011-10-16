@@ -1,8 +1,8 @@
 #########################################################################
-# - Net::UCP 0.41 - 
+# - Net::UCP 0.42 - 
 # 
-# Version : 0.41
-# Date    : 06/04/2010
+# Version : 0.42
+# Date    : 16/10/2011
 #
 # Library based on EMI - UCP INTERFACE Specification 
 # Version 3.5 of December 1999 
@@ -37,7 +37,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
 @EXPORT = qw();
 @EXPORT_OK = ();
 
-$VERSION = '0.41';
+$VERSION = '0.42';
 
 $VERSION = eval $VERSION; 
 
@@ -429,7 +429,7 @@ sub wait_in_loop {
 	if ($retval) {
 	    my ($buffer,$response);
 	    do {
-                read($socket,$buffer,1);
+                sysread($socket,$buffer,1);
                 $response.=$buffer;
             } until ($buffer eq ETX);   
 	    
@@ -491,7 +491,7 @@ sub parse_message {
  
     my $ref_mess = undef;
     
-    if (my($optype) = $resp =~ m{^\d{2}/\d{5}/.*?/(01|02|03|30|51|52|53|54|55|56|57|58|60|61)/.*}) {
+    if (my($optype) = $resp =~ m{^\d{2}/\d{5}/.*?/(01|02|03|30|31|51|52|53|54|55|56|57|58|60|61)/.*}) {
 	my $parse_method = "parse_$optype";
 	$ref_mess = $self->$parse_method($resp);
     }
@@ -1951,7 +1951,7 @@ sub transmit_msg {
 		    $rd=undef;
 		    local($SIG{ALRM})=sub{die("alarm\n")}; # NB: \n required
 		    alarm($timeout);
-		    $rd=read($self->{SOCK},$buffer,1);
+		    $rd=sysread($self->{SOCK},$buffer,1);
 		    alarm(0);
 		};
 		# Propagate unexpected errors.
@@ -1959,7 +1959,7 @@ sub transmit_msg {
 	    }
 	    else {
 		# No alarm() implemented. Must do a (potentially) blocking call to read().
-		$rd=read($self->{SOCK},$buffer,1);
+		$rd=sysread($self->{SOCK},$buffer,1);
 	    }
 	    defined($rd)||do{ # undef, read error.
 		$errtxt="Failed to read from SMSC socket. Never received ETX. Remote end closed?";
@@ -2797,7 +2797,7 @@ Marco Romano, E<lt>nemux@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2004-2008 by Marco Romano
+Copyright (C) 2004-2011 by Marco Romano
 
   This library is free software; you can redistribute it and/or modify
   it under the same terms as Perl itself, either Perl version 5.8.4 or,
